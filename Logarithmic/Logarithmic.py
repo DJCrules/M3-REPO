@@ -13,7 +13,7 @@ def add_noise(y, sigma=0.05):
     return y * (1 + np.random.normal(0, sigma, size=y.shape))
 
 # Load the dataset
-seattle_housing = df = pd.read_csv('seattle_housing_units.csv', converters={
+seattle_housing = df = pd.read_csv('D:\M3 Repository\M3-REPO\Logarithmic\seattle_housing_units.csv', converters={
     'Total housing units': lambda x: int(x.replace(',', ''))
 })
 
@@ -41,8 +41,8 @@ future_predictions = logistic_growth(future_times, *params)
 selected_future_years = np.array([2030, 2040, 2070])
 selected_predictions = logistic_growth(selected_future_years - start_year, *params)
 
-# Sensitivity analysis averaged over 5 trials
-num_trials = 5
+# Sensitivity analysis averaged over 1000 trials
+num_trials = 1000
 percent_differences = []
 
 for _ in range(num_trials):
