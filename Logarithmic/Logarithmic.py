@@ -20,9 +20,6 @@ seattle_housing = df = pd.read_csv('D:\M3 Repository\M3-REPO\Logarithmic\seattle
 # Clean column names
 seattle_housing.columns = seattle_housing.columns.str.strip()
 
-# Uncomment to not include Covid data
-# seattle_housing = seattle_housing[seattle_housing['Year'] < 2020]
-
 # Prepare the data
 X = seattle_housing['Year'] - seattle_housing['Year'].min()
 y = seattle_housing['Total housing units']
@@ -41,8 +38,8 @@ future_predictions = logistic_growth(future_times, *params)
 selected_future_years = np.array([2030, 2040, 2070])
 selected_predictions = logistic_growth(selected_future_years - start_year, *params)
 
-# Sensitivity analysis averaged over 1000 trials
-num_trials = 1000
+# Sensitivity analysis averaged over 10 trials
+num_trials = 10
 percent_differences = []
 
 for _ in range(num_trials):
@@ -59,6 +56,9 @@ for _ in range(num_trials):
 
 # Calculate average percent differences
 average_percent_diff = np.mean(percent_differences, axis=0)
+
+P0_est, r_est = params
+print(f"Estimated Growth Rate (r): {r_est:.4f}")
 
 print("Average Percent Differences for Selected Future Predictions:")
 for year, diff in zip(selected_future_years, average_percent_diff):
