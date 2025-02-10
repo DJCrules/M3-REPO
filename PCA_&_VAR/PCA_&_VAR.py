@@ -27,12 +27,12 @@ scaler = StandardScaler()
 revenue_data = df[["Broadcasting", "Commercial", "Matchday"]]
 scaled_data = scaler.fit_transform(revenue_data)
 
-#Apply's PCA
+#Applies PCA
 pca = PCA(n_components=3)
 principal_components = pca.fit_transform(scaled_data)
 pca_df = pd.DataFrame(principal_components, columns=["PC1", "PC2", "PC3"], index=df.index)
 
-# Step 5: Fit the VAR model
+#Fits the VAR model
 pca_diff = pca_df.diff().dropna()
 max_lags_possible = min(2, len(pca_diff) // 2)
 model = VAR(pca_diff)
