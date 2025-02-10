@@ -53,13 +53,17 @@ last_forecast_value = forecast_df.loc[last_forecast_year, "Total_Revenue"]
 
 # Plot total revenue forecast
 plt.figure(figsize=(12, 6))
-plt.plot(combined_years, combined_revenue, marker="o", color="red", label="Total Revenue (Historical + Forecast)", linestyle="-")
 
-# Highlight only the last forecasted year
-plt.scatter(last_forecast_year, last_forecast_value, color="red", marker="o", label="Last Forecast Year")
+# Plot the exponential smoothing curve (historical + forecast)
+plt.plot(combined_years, total_revenue_fitted, color="red", label="Exponential Smoothing Curve", linestyle="-")
 
+# Plot historical total revenue data points (without connecting lines)
+plt.scatter(df.index, total_revenue_historical, color="blue", label="Historical Total Revenue", zorder=5)
+
+# Add labels, legend, and title
 plt.xlabel("Year")
 plt.ylabel("Total Revenue")
 plt.legend()
 plt.title("Football Team Total Revenue Forecast")
+plt.grid(True)
 plt.show()
