@@ -4,60 +4,59 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.api import VAR
 
 # Step 1: Generate Synthetic Data
-np.random.seed(42)  # For reproducibility
+np.random.seed(42)
 
-# Simulate a multivariate time series (e.g., 3 variables: GDP, Interest Rate, Inflation)
-n_obs = 100  # Number of observations (time steps)
-n_vars = 3  # Number of variables (e.g., GDP, Interest Rate, Inflation Rate)
+years = np.arange(2000, 2024)  # 24 years of data (2000-2023)
+n_obs = len(years)
 
-# Create synthetic time series data
-time = np.arange(n_obs)
-gdp = np.cumsum(np.random.randn(n_obs)) + 10000  # Random walk for GDP (sum of random steps)
-interest_rate = np.cumsum(np.random.randn(n_obs)) + 5  # Random walk for Interest Rate
-inflation_rate = np.cumsum(np.random.randn(n_obs)) + 2  # Random walk for Inflation Rate
+# Simulate revenue streams (in million dollars)
+broadcasting_revenue = pd.read_csv(r'D:\M3 Repository\M3-REPO\VAR\Liverpool_revenue', converters={
+    'Broadcasting': lambda x: int(x * 1000000)})
+commercial_revenue = pd.read_csv(r'D:\M3 Repository\M3-REPO\VAR\Liverpool_revenue', converters={
+    'Commercial': lambda x: int(x * 1000000)})
+matchday_revenue = pd.read_csv(r'D:\M3 Repository\M3-REPO\VAR\Liverpool_revenue', converters={
+    'Matchday': lambda x: int(x * 1000000)})
 
-# Create a DataFrame
+# Create DataFrame
 data = pd.DataFrame({
-    'GDP': gdp,
-    'Interest Rate': interest_rate,
-    'Inflation Rate': inflation_rate
-}, index=time)
+    'Year': years,
+    'Broadcasting Revenue': broadcasting_revenue,
+    'Commercial Revenue': commercial_revenue,
+    'Matchday Revenue': matchday_revenue,
+})
 
-# Step 2: Visualize the Synthetic Data
-data.plot(figsize=(10, 6))
-plt.title('Synthetic Time Series Data: GDP, Interest Rate, and Inflation Rate')
-plt.xlabel('Time')
-plt.ylabel('Value')
-plt.legend(loc='best')
-plt.show()
+# Compute total revenue
+data['Total Revenue'] = data['Broadcasting Revenue'] + data['Commercial Revenue'] + data['Matchday Revenue']
+
+# Step 2: Prepare Data for VAR
+data.set_index('Year', inplace=True)  # Use Year as the index
+data_diff = data.diff().dropna()  # Differencing to ensure stationarity
 
 # Step 3: Fit the VAR Model
-model = VAR(data)  # Fit the VAR model to the data
+max_lags_possible = min(10, len(data_diff) // 2)  # Ensure enough observations
+model = VAR(data_diff)
+lag_order = model.select_order(maxlags=max_lags_possible).aic  # Auto-adjust maxlags
+var_model = model.fit(lag_order)
 
-# Choose the optimal lag length using the AIC criterion
-lag_order = model.select_order(maxlags=10).aic
-print(f'Optimal Lag Order: {lag_order}')
+# Step 4: Forecast Future Revenue
+forecast_steps = 10  # Predict next 10 years (2024-2033)
+forecast_input = data_diff.values[-lag_order:]
+forecast_diff = var_model.forecast(forecast_input, steps=forecast_steps)
 
-# Fit the model using the optimal lag order
-var_result = model.fit(lag_order)
+# Convert differenced forecast back to original values
+forecast_df = pd.DataFrame(forecast_diff, columns=data.columns, index=np.arange(2024, 2024+forecast_steps))
+forecast_df = forecast_df.cumsum() + data.iloc[-1]  # Reverse differencing
 
-# Step 4: Make Forecasts (for the next 10 time steps)
-forecast_steps = 10  # Forecast for the next 10 time steps
-forecast = var_result.forecast(data.values[-lag_order:], steps=forecast_steps)
-
-# Step 5: Visualize the Forecast
-forecast_df = pd.DataFrame(forecast, columns=data.columns, index=np.arange(n_obs, n_obs + forecast_steps))
-
-# Plot the forecast
+# Step 5: Plot Forecasts
 plt.figure(figsize=(10, 6))
-plt.plot(data.index, data['GDP'], label='Actual GDP', color='blue')
-plt.plot(forecast_df.index, forecast_df['GDP'], label='Forecasted GDP', color='red', linestyle='--')
-plt.title('Synthetic GDP Forecast with VAR Model')
-plt.xlabel('Time')
-plt.ylabel('GDP Value')
-plt.legend(loc='best')
+plt.plot(data.index, data['Total Revenue'], label='Historical Total Revenue', color='blue')
+plt.plot(forecast_df.index, forecast_df['Total Revenue'], label='Forecasted Total Revenue', color='red', linestyle='--')
+plt.xlabel('Year')
+plt.ylabel('Total Revenue (in million $)')
+plt.title('Football Club Revenue Forecast with VAR Model')
+plt.legend()
 plt.show()
 
-# Print the forecasted values
-print("Forecasted Values for the next 10 time steps:")
+# Print Forecasted Values
+print("Forecasted Revenue for Next 10 Years:")
 print(forecast_df)

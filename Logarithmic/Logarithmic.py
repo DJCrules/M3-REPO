@@ -14,8 +14,7 @@ def add_noise(y, sigma=0.05):
 
 # Load the dataset
 United_Kingdom_population = df = pd.read_csv(r'D:\M3 Repository\M3-REPO\Logarithmic\united_kingdom_population.csv', converters={
-    'Population': lambda x: int(x.replace(',', ''))
-})
+    'Population': lambda x: int(x.replace(',', ''))})
 
 # Clean column names
 United_Kingdom_population.columns = United_Kingdom_population.columns.str.strip()
