@@ -103,8 +103,7 @@ class polynomial_trend:
                 last_mse = current_mse
                 iteration += 1
             except RuntimeWarning:
-                print("MSE: Overflow")
-                return [0], 9999999
+                raise RuntimeWarning
         print(f"MSE: {current_mse}")
         return coefficients, current_mse
     
@@ -122,15 +121,17 @@ class polynomial_trend:
 
         datapoints = len(self.xs)
         for i in range(1, int(np.round(np.sqrt(datapoints), 0))):
-            coeffs, mse = self.regress(i)
-            #^regress for the specific order
-            #newtrend.plot_data(coeffs, mse=mse)
-
-            current_BIC = self.BIC(coeffs, mse)
-            if current_BIC < bestBIC:
-                best_coefficients, best_mse = coeffs, mse
-                bestBIC = current_BIC
-            #^finding best bic
+            try:
+                coeffs, mse = self.regress(i)
+                current_BIC = self.BIC(coeffs, mse)
+                if current_BIC < bestBIC:
+                    best_coefficients, best_mse = coeffs, mse
+                    bestBIC = current_BIC
+                    #^finding best bic
+                #^regress for the specific order
+                #newtrend.plot_data(coeffs, mse=mse)
+            except RuntimeWarning:
+                continue
         
         self.coeffs = best_coefficients
         self.mse = best_mse
@@ -147,5 +148,5 @@ class polynomial_trend:
         k = len(coeffs) 
         return (n * np.log(mse)) + ((k * 2) * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sampledata.csv', show=True, random=True)
+newtrend = polynomial_trend(r'.\Polynomial\LiverpoolRev.csv', show=True)
 newtrend.general_regress(0)
