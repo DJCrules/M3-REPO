@@ -3,74 +3,76 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 class polynomial_trend:
-    def __init__(self, filename):
+    def __init__(self, filename, order=0, new=False):
         self.csv_file = filename
-    def generate_cubic_data(self, num_points=100, noise_level=2, coefficients=[0.05, 0.005, 0.005, 0]):
-        """
-        wipes csvv and writes noisy cubic
-        example: generate_cubic_data(".\Polynomial\sample_data.csv", num_points=200, noise_level=20, coefficients=[1, -2, 3, -5])
-        """
-        x = np.linspace(-5, 4.9, num_points)
+        if order != 0 and new:
+            self.generate_poly_data(order, noise_level=100)
+            self.plot_data()
+        elif order == 0:
+            self.plot_data()
+        df = pd.read_csv(self.csv_file)
+        self.xs = df.iloc[:, 0]
+        self.ys = df.iloc[:, 1]
+        self.numpy_xs = np.array(self.xs)
+        self.numpy_ys = np.array(self.ys)
 
-        a, b, c, d = coefficients[0], coefficients[1], coefficients[2], coefficients[3]
-        y = a * x**3 + b * x**2 + c * x + d
-
+    def generate_poly_data(self, order, num_points=100, noise_level=2):
+        coefficients=np.random.normal(0, 1, order + 1)
+        x = np.linspace(-10, 10, num_points)
+        y = np.sum([c * (x**i) for i, c in enumerate(coefficients)], axis=0)
         noise = np.random.normal(0, noise_level, num_points)
-        y_noisy = y + noise
-
-        df = pd.DataFrame({'x': x, 'y': y_noisy})
-
-        print(self.csv_file)
+        y += noise
+        df = pd.DataFrame({'x': x, 'y': y})
         df.to_csv(self.csv_file, index=False)
     
-    def generate_quadratic_data(self, num_points=100, noise_level=10, coefficients=[1, -2, 3]):
-        """
-        wipes csvv and writes noisy cubic
-        example: generate_cubic_data(".\Polynomial\sample_data.csv", num_points=200, noise_level=20, coefficients=[1, -2, 3])
-        """
-        x = np.linspace(-10, 10, num_points)
+    def plot_data(self, coefficients=None):
+        plt.scatter(self.xs, self.ys)
+        if coefficients is not None:
+            poly_func = np.poly1d(coefficients[::-1])
+            x_range = np.linspace(min(self.xs), max(self.xs), 100)
+            y_fit = poly_func(x_range)
+            plt.plot(x_range, y_fit, color='red', label="Polynomial Fit")
+        plt.show()
+    
+    def regress(self, order, rate=0.01, tolerance=1e-6, max_iterations=10000):
+        coefficients = np.random.normal(0, 0.1, order + 1)
+        print(coefficients)
+        
+        last_mse = self.MSE(coefficients)
+        print(last_mse)
+        iteration = 0
 
-        a, b, c = coefficients[0], coefficients[1], coefficients[2]
-        y = a * x**2 + b * x + c
-
-        noise = np.random.normal(0, noise_level, num_points)
-        y_noisy = y + noise
-
-        df = pd.DataFrame({'x': x, 'y': y_noisy})
-
-        print(self.csv_file)
-        df.to_csv(self.csv_file, index=False)
-
-    def plot_data(self):
-        """
-        Reads a CSV file and plots a scatter graph.
-        Assumes the CSV has two columns: x-values and y-values (no headers).
-        """
-        try:
-            # Read CSV file
-            df = pd.read_csv(self.csv_file)
+        while iteration < max_iterations:
+            predicted_ys = np.polyval(coefficients[::-1], self.numpy_xs)
             
-            # Ensure there are at least two columns
-            if df.shape[1] < 2:
-                raise ValueError("CSV file must have at least two columns for x and y values.")
+            errors = predicted_ys - self.numpy_ys
             
-            x = df.iloc[:, 0]
-            y = df.iloc[:, 1]
+            gradient = np.zeros(order + 1)
+            for i in range(order + 1):
+                gradient[i] = np.mean(errors * (self.numpy_xs ** i))
             
-            # Create scatter plot
-            plt.scatter(x, y)
-            plt.xlabel("X-axis")
-            plt.ylabel("Y-axis")
-            plt.title("Scatter")
+            coefficients -= rate * gradient
             
-            # Show plot
-            plt.show()
-        except Exception as e:
-            print(f"Error: {e}")
+            current_mse = self.MSE(coefficients)
+            
+            if abs(last_mse - current_mse) < tolerance:
+                print(f"Converged after {iteration} iterations.")
+                break
+            
+            last_mse = current_mse
+            iteration += 1
+            
+            if iteration % 1000 == 0:
+                print(f"Iteration {iteration}: MSE = {current_mse}")
+        
+        return coefficients
+    
+    def MSE(self, coefficients):
+        predictions = np.polyval(coefficients[::-1], self.xs)
+        errors = (predictions - self.ys) ** 2
+        return np.mean(errors)
 
-newtrend = polynomial_trend('.\Polynomial\sample_data.csv')
 
-newtrend.generate_cubic_data()
-newtrend.plot_data()
-
-   
+newtrend = polynomial_trend('.\Polynomial\sample_data.csv', 3, False)
+cos = newtrend.regress(3)
+newtrend.plot_data(cos)
