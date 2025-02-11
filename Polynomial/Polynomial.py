@@ -48,7 +48,7 @@ class polynomial_trend:
         df = pd.DataFrame({'x': x, 'y': y})
         df.to_csv(self.csv_file, index=False)
     
-    def plot_data(self, coefficients=None, extra=0, mse=0):
+    def plot_data(self, coefficients=None, extra=0, mse=0, pred=0):
         """
         extra is short for extrapolation
         mse is on title
@@ -59,13 +59,28 @@ class polynomial_trend:
 
         if coefficients is not None:
             poly_func = np.poly1d(coefficients[::-1])
-            x_range = np.linspace(min(self.xs), max(self.xs) + extra, 100)
+            x_range = np.linspace(min(self.xs), max(self.xs), 100)
             y_fit = poly_func(x_range)
             #^numpy fitting polynomial to axis
 
             plt.plot(x_range, y_fit, color='red')
+            x_range = np.linspace(max(self.xs), max(self.xs) + extra)
+            y_fit = poly_func(x_range)
+            plt.plot(x_range, y_fit, color='red', linestyle="dashed")
             plt.title(f"Relative MSE: {np.round((mse /(max(self.xs) - min(self.xs))), 2)}\ny = " + " + ".join(f"{np.round(c, 2)} * x^{i}" for i, c in enumerate(coefficients)))
             #^title includes mse and all the coeffs nicely organised
+            
+            if pred != 0:
+                poly_derivative = np.polyder(poly_func)
+                last_x = max(self.xs)
+                last_y = poly_func(last_x)
+                last_slope = poly_derivative(last_x) 
+                
+                x_extrapolate = np.linspace(last_x, last_x + pred, 50)
+                y_extrapolate = last_y + last_slope * (x_extrapolate - last_x)  
+                # y = mx + c
+                plt.plot(x_extrapolate, y_extrapolate, color='red', linestyle="dashed", label="Linear Extrapolation")
+
 
         plt.show()
     
@@ -84,26 +99,23 @@ class polynomial_trend:
         last_mse = self.MSE(coefficients)
         iteration = 0
         while iteration < max_iterations:
-            try:
-                poly_func = np.poly1d(coefficients[::-1])
-                predicted_ys = poly_func(self.numpy_xs)
-                errors = predicted_ys - self.numpy_ys
-                # ^the difference in predicted polynomial from datapoints
+            poly_func = np.poly1d(coefficients[::-1])
+            predicted_ys = poly_func(self.numpy_xs)
+            errors = predicted_ys - self.numpy_ys
+            # ^the difference in predicted polynomial from datapoints
 
-                gradient = np.zeros(order + 1)
-                for i in range(order + 1):
-                    gradient[i] = np.mean(2 * errors * np.power(self.numpy_xs, i))
-                coefficients -= rate * gradient
-                #^gradient descent for coeffs
+            gradient = np.zeros(order + 1)
+            for i in range(order + 1):
+                gradient[i] = np.mean(2 * errors * np.power(self.numpy_xs, i))
+            coefficients -= rate * gradient
+            #^gradient descent for coeffs
 
-                current_mse = self.MSE(coefficients)
-                if abs(last_mse - current_mse) < tolerance:
-                    break
-                #^check if the mse has increased and if it has then stop
-                last_mse = current_mse
-                iteration += 1
-            except RuntimeWarning:
-                raise RuntimeWarning
+            current_mse = self.MSE(coefficients)
+            if abs(last_mse - current_mse) < tolerance:
+                break
+            #^check if the mse has increased and if it has then stop
+            last_mse = current_mse
+            iteration += 1
         print(f"MSE: {current_mse}")
         return coefficients, current_mse
     
@@ -121,26 +133,25 @@ class polynomial_trend:
 
         datapoints = len(self.xs)
         for i in range(1, int(np.round(np.sqrt(datapoints), 0))):
-            try:
-                coeffs, mse = self.regress(i)
-                current_BIC = self.BIC(coeffs, mse)
-                if current_BIC < bestBIC:
-                    best_coefficients, best_mse = coeffs, mse
-                    bestBIC = current_BIC
-                    #^finding best bic
-                #^regress for the specific order
-                #newtrend.plot_data(coeffs, mse=mse)
-            except RuntimeWarning:
-                continue
+            coeffs, mse = self.regress(i)
+            current_BIC = self.BIC(coeffs, mse)
+            if current_BIC < bestBIC:
+                best_coefficients, best_mse = coeffs, mse
+                bestBIC = current_BIC
+                #^finding best bic
+            #^regress for the specific order
+            #newtrend.plot_data(coeffs, mse=mse)
+
         
         self.coeffs = best_coefficients
         self.mse = best_mse
         print("Refining: ")
-        self.coeffs, self.mse = self.regress(len(self.coeffs - 1), 0.00001, 0.00000001, 400000)
+        self.coeffs, self.mse = self.regress(len(self.coeffs - 1), 0.00001, 0.00000001, 200000)
         #^make the model with the best BIC more refined
-
-        self.plot_data(self.coeffs, extra, self.mse)
-        self.plot_data(self.coeffs, extra + 2, self.mse)
+        self.plot_data(self.coeffs, 0, self.mse)
+        self.plot_data(self.coeffs, extra, self.mse, 0)
+        self.plot_data(self.coeffs, 0, self.mse, extra)
+        self.plot_data(self.coeffs, extra, self.mse, extra)
     
     def BIC(self, coeffs, mse):
         #cool equation to figure out the best order polynomial to model dataset
@@ -148,5 +159,5 @@ class polynomial_trend:
         k = len(coeffs) 
         return (n * np.log(mse)) + ((k * 2) * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\LiverpoolRev.csv', show=True)
-newtrend.general_regress(0)
+newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
+newtrend.general_regress(2)
