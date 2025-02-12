@@ -48,7 +48,7 @@ class polynomial_trend:
         df = pd.DataFrame({'x': x, 'y': y})
         df.to_csv(self.csv_file, index=False)
     
-    def plot_data(self, coefficients=None, extra=0, mse=0, pred=0):
+    def plot_data(self, coefficients=None, extra=0, mse=0, pred=0, avg=False):
         """
         extra is short for extrapolation
         mse is on title
@@ -64,9 +64,8 @@ class polynomial_trend:
             #^numpy fitting polynomial to axis
 
             plt.plot(x_range, y_fit, color='red')
-            x_range = np.linspace(max(self.xs), max(self.xs) + extra)
-            y_fit = poly_func(x_range)
-            plt.plot(x_range, y_fit, color='red', linestyle="dashed")
+            x_xtra = np.linspace(max(self.xs), max(self.xs) + extra)
+            y_xtra = poly_func(x_xtra)
             plt.title(f"Relative MSE: {np.round((mse /(max(self.xs) - min(self.xs))), 2)}\ny = " + " + ".join(f"{np.round(c, 2)} * x^{i}" for i, c in enumerate(coefficients)))
             #^title includes mse and all the coeffs nicely organised
             
@@ -79,9 +78,11 @@ class polynomial_trend:
                 x_extrapolate = np.linspace(last_x, last_x + pred, 50)
                 y_extrapolate = last_y + last_slope * (x_extrapolate - last_x)  
                 # y = mx + c
-                plt.plot(x_extrapolate, y_extrapolate, color='red', linestyle="dashed", label="Linear Extrapolation")
-
-
+                if avg:
+                    y_avg = np.divide((y_extrapolate + y_xtra), 2)
+                    plt.plot(x_extrapolate, y_avg, color='blue', linestyle="dashed")
+                plt.plot(x_extrapolate, y_extrapolate, color='red', linestyle="dashed")
+            plt.plot(x_xtra, y_xtra, color='red', linestyle="dashed")
         plt.show()
     
     def regress(self, order, rate=0.00001, tolerance=0.0001, max_iterations=20000):
@@ -152,6 +153,7 @@ class polynomial_trend:
         self.plot_data(self.coeffs, extra, self.mse, 0)
         self.plot_data(self.coeffs, 0, self.mse, extra)
         self.plot_data(self.coeffs, extra, self.mse, extra)
+        self.plot_data(self.coeffs, extra, self.mse, extra, True)
     
     def BIC(self, coeffs, mse):
         #cool equation to figure out the best order polynomial to model dataset
@@ -160,4 +162,4 @@ class polynomial_trend:
         return (n * np.log(mse)) + ((k * 2) * np.log(n))
 
 newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
-newtrend.general_regress(2)
+newtrend.general_regress(4)
