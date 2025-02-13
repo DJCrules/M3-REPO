@@ -28,7 +28,7 @@ class polynomial_trend:
         if show:
             self.plot_data()
 
-    def generate_poly_data(self, order, num_points=50):
+    def generate_poly_data(self, order, num_points=10):
         """
         the added noise = order
         """
@@ -139,13 +139,13 @@ class polynomial_trend:
         for i in range(2, int(np.round(np.sqrt(datapoints), 0))):
             try:
                 coeffs, mse = self.regress(i)
+                #^regress for the specific order
                 current_BIC = self.BIC(coeffs, mse)
                 print(f"order {i} BIC: {round(current_BIC, 2)}")
                 if current_BIC < bestBIC:
                     best_coefficients, best_mse = coeffs, mse
                     bestBIC = current_BIC
                     #^finding best bic
-            #^regress for the specific order
             except:
                 print(f"orders {i}+ cause overflow error")
                 break
@@ -155,11 +155,11 @@ class polynomial_trend:
         print(f"\norder {len(self.coeffs) - 1} chosen, Refining: ")
         self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.00001, 0.00000001, 200000)
         #^make the model with the best BIC more refined
-        self.plot_data(self.coeffs, 0, self.mse)
-        self.plot_data(self.coeffs, extra, self.mse, 0)
-        self.plot_data(self.coeffs, 0, self.mse, extra)
-        self.plot_data(self.coeffs, extra, self.mse, extra)
-        self.plot_data(self.coeffs, extra, self.mse, extra, True)
+
+        self.plot_data(self.coeffs, 0, self.mse) #simple fitted line
+        self.plot_data(self.coeffs, extra, self.mse, 0) #extra following poly line
+        self.plot_data(self.coeffs, 0, self.mse, extra) # extra running straight on from poly line
+        self.plot_data(self.coeffs, extra, self.mse, extra, True) # both + mean
     
     def BIC(self, coeffs, mse):
         #cool equation to figure out the best order polynomial to model dataset
@@ -168,4 +168,4 @@ class polynomial_trend:
         return (n * np.log(mse)) + (k * np.log(n))
 
 newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
-newtrend.general_regress(2)
+newtrend.general_regress(10)
