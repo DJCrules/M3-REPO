@@ -85,7 +85,7 @@ class polynomial_trend:
             plt.plot(x_xtra, y_xtra, color='red', linestyle="dashed")
         plt.show()
     
-    def regress(self, order, rate=0.00001, tolerance=0.0001, max_iterations=20000):
+    def regress(self, order, rate=0.000001, tolerance=0.000001, max_iterations=20000):
         """
         really good at cubic but quite bad at anything < 3
         """
@@ -116,10 +116,13 @@ class polynomial_trend:
                 if abs(last_mse - current_mse) < tolerance:
                     break
                 #^check if the mse has increased and if it has then stop
+
                 last_mse = current_mse
                 iteration += 1
+            print(f"Ended on iteration {iteration}")
             return coefficients, current_mse
         except:
+            print(f"Error on iteration {iteration}")
             raise Exception
     
     def MSE(self, coefficients):
@@ -136,7 +139,8 @@ class polynomial_trend:
         #^find starting baysian information criteria
 
         datapoints = len(self.xs)
-        for i in range(2, int(np.round(np.sqrt(datapoints), 0))):
+        #int(np.round(np.sqrt(datapoints), 0))
+        for i in range(2, 5):
             try:
                 coeffs, mse = self.regress(i)
                 #^regress for the specific order
@@ -153,12 +157,12 @@ class polynomial_trend:
         self.coeffs = best_coefficients
         self.mse = best_mse
         print(f"\norder {len(self.coeffs) - 1} chosen, Refining: ")
-        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.00001, 0.00000001, 200000)
+        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.000001, 0, 100000)
         #^make the model with the best BIC more refined
 
-        self.plot_data(self.coeffs, 0, self.mse) #simple fitted line
-        self.plot_data(self.coeffs, extra, self.mse, 0) #extra following poly line
-        self.plot_data(self.coeffs, 0, self.mse, extra) # extra running straight on from poly line
+        #self.plot_data(self.coeffs, 0, self.mse) #simple fitted line
+        #self.plot_data(self.coeffs, extra, self.mse, 0) #extra following poly line
+        #self.plot_data(self.coeffs, 0, self.mse, extra) # extra running straight on from poly line
         self.plot_data(self.coeffs, extra, self.mse, extra, True) # both + mean
     
     def BIC(self, coeffs, mse):
@@ -167,5 +171,5 @@ class polynomial_trend:
         k = len(coeffs)
         return (n * np.log(mse)) + (k * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
-newtrend.general_regress(10)
+newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True)
+newtrend.general_regress(1)
