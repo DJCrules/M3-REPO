@@ -2,18 +2,19 @@ from matplotlib import pyplot as pp
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
-#Create random set of data
-data = np.array([[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]])
+# # Create random set of data
+# data = np.array([[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]])
 
-dimensions = 3
+# dimensions = 2
 
-for i in range(dimensions):
-    slope = np.random.randint(-100, 100)
-    intercept = np.random.randint(0, 100)
-    noise = np.random.normal(0, 50, size=len(data[0]))
+# # Initialising data with noise for random
+# for i in range(dimensions):
+#     slope = np.random.randint(-100, 100)
+#     intercept = np.random.randint(0, 100)
+#     noise = np.random.normal(0, 50, size=len(data[0]))
 
-    new_row = np.array([slope * data[0] + intercept + noise])  
-    data = np.concatenate([data, new_row], axis=0)
+#     new_row = np.array([slope * data[0] + intercept + noise])  
+#     data = np.concatenate([data, new_row], axis=0)
 
 data = np.trunc(data)
 print(data)
@@ -36,12 +37,11 @@ def linear_regression(training_array, target_array, learning_rate=1e-6, iteratio
 
     return theta
 
-# Separate x, y, z data
+# Split data 
 x_data = data[0]
 y_data = data[1]
 z_data = data[2]
 
-# Perform linear regression for y and z with respect to x
 theta_y = linear_regression(x_data.reshape(-1, 1), y_data)
 theta_z = linear_regression(x_data.reshape(-1, 1), z_data)
 
