@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import warnings
+import random
+import csv
 warnings.simplefilter("error", RuntimeWarning)
 
 class polynomial_trend:
@@ -28,7 +30,7 @@ class polynomial_trend:
         if show:
             self.plot_data()
 
-    def generate_poly_data(self, order, num_points=10):
+    def generate_poly_data(self, order, num_points=35, shift=False):
         """
         the added noise = order
         """
@@ -85,15 +87,13 @@ class polynomial_trend:
             plt.plot(x_xtra, y_xtra, color='red', linestyle="dashed")
         plt.show()
     
-    def regress(self, order, rate=0.000001, tolerance=0.000001, max_iterations=20000):
+    def regress(self, order, rate=0.00001, tolerance=0.000001, max_iterations=20000):
         """
         really good at cubic but quite bad at anything < 3
         """
         try:
             coefficients = np.ones(order + 1)
-            scale_factor = (max(self.xs) - min(self.xs)) ** (1 / order)
-            for i in range(1, len(coefficients)):
-                coefficients[i] = scale_factor / (i ** 2)
+            coefficients[0] = np.mean(self.numpy_ys)
             # ^initialise the coeffs like this to avoid overflow, from them being too far 
             # from the datapoints initially. dont use random coeffs because this makes 
             # repeats inconsistent
@@ -134,7 +134,7 @@ class polynomial_trend:
 
     def general_regress(self, extra):
         best_coefficients, best_mse = self.regress(1)
-        bestBIC = self.BIC(best_coefficients, best_mse)
+        bestBIC = (self.BIC(best_coefficients, best_mse))
         print(f"order 1 BIC: {round(bestBIC, 2)}")
         #^find starting baysian information criteria
 
@@ -144,7 +144,7 @@ class polynomial_trend:
             try:
                 coeffs, mse = self.regress(i)
                 #^regress for the specific order
-                current_BIC = self.BIC(coeffs, mse)
+                current_BIC = (self.BIC(coeffs, mse))
                 print(f"order {i} BIC: {round(current_BIC, 2)}")
                 if current_BIC < bestBIC:
                     best_coefficients, best_mse = coeffs, mse
@@ -157,7 +157,7 @@ class polynomial_trend:
         self.coeffs = best_coefficients
         self.mse = best_mse
         print(f"\norder {len(self.coeffs) - 1} chosen, Refining: ")
-        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.000001, 0, 100000)
+        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.00001, 1e-10, 1000000)
         #^make the model with the best BIC more refined
 
         #self.plot_data(self.coeffs, 0, self.mse) #simple fitted line
@@ -171,5 +171,5 @@ class polynomial_trend:
         k = len(coeffs)
         return (n * np.log(mse)) + (k * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True)
-newtrend.general_regress(1)
+newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
+newtrend.general_regress(0)
