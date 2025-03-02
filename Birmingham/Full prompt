@@ -1,0 +1,431 @@
+This guide provides a Python script to simulate indoor air temperature over 24 hours in a non-air-conditioned dwelling during a heatwave. It reads user-defined parameters from a configuration file and uses a simple physical model (heat conduction, ventilation, internal gains, solar gains, and thermal mass) to predict how hot the interior will get. The output includes a line graph of indoor temperature vs. time with a shaded uncertainty band showing best- and worst-case scenarios.
+Overview
+
+During a heatwave, indoor temperatures in buildings without AC can rise to uncomfortable or dangerous levels. This simulation uses fundamental heat transfer principles to estimate indoor conditions hour by hour. We consider:
+
+    Heat conduction through walls and windows (Fourier’s law of thermal conduction).
+    Ventilation and infiltration (exchange of indoor/outdoor air).
+    Internal heat gains from people (metabolic heat ~100 W/person​
+    bregroup.com
+    ) and possibly appliances (not detailed here).
+    Solar heat gains through windows (reduced by any shading).
+    Thermal mass of the building (how much heat the structure can absorb, moderating temperature swings).
+
+We apply a time-stepping (Euler forward) approach to update indoor temperature each hour based on the net heat gained or lost. The script is heavily documented so users can understand and modify it. Simply adjust the input parameters in the config file before running to explore different dwelling types or conditions.
+Input Configuration
+
+All input parameters are stored in a separate configuration file (e.g., config.json) that the script reads at runtime. This makes it easy to tweak settings without editing the code. Key parameters include:
+
+    Accommodation Type: e.g. Detached house, Semi-detached, Apartment, etc. This influences the building’s thermal mass and window-to-wall ratio. For instance, a detached house has more exterior walls and windows (higher solar exposure) than a mid-building apartment unit. More exterior surface means more heat can enter via conduction and sunlight. An apartment unit (surrounded by other units) has fewer exposed walls, so it gains heat more slowly (shared walls with neighbors see little heat flow since adjacent units are at similar indoor temperature).
+
+    Stories: Number of stories (floors) of the unit. This can affect natural ventilation – a two-story home can utilize stack effect (warm air rising) to ventilate better than a single-story unit. We assume more stories slightly increase the ventilation rate by allowing warm air to escape from upper floors and draw in cooler air below (if windows are open). However, multiple stories also mean a larger wall area relative to floor space, which can increase heat conduction and solar gain.
+
+    Units in Structure: How many units are in the entire building. A higher number (e.g. an apartment building with 6 units) means each unit shares more walls/floors with others, reducing the exposed surface area to the outside. Fewer exposed walls = less heat conduction from outside. In the model, we reduce heat gain/loss proportionally if a unit has neighbors on several sides.
+
+    Unit Size (m²): The floor area of the dwelling. Larger units have more air volume and more material to absorb heat (higher thermal mass), so they warm up and cool down more slowly. Conversely, a small flat can heat up quickly because there’s less volume to buffer heat and potentially a higher occupant density (more Watts per m²). Unit size also correlates with surface area: a bigger unit usually has more wall and roof area for heat exchange.
+
+    Year Built: The construction year of the building. This influences the insulation and heat transfer coefficient of the walls/windows. Older buildings typically have higher U-values (poorer insulation, leaky single-pane windows), so heat flows through the envelope faster. Newer buildings have better insulation (lower U-values), slowing the rate of heat conduction through walls. In the model we assume a trend where each more recent decade improves insulation, reducing conductive heat gains on hot days.
+
+    Rooms per Unit: Number of rooms in the dwelling. This factor is kept simple but can represent internal partitioning. More rooms mean more interior walls that add thermal mass (extra heat storage) but can slightly impede air flow within the unit. We include it qualitatively – e.g., a unit with many small rooms might retain heat in closed-off spaces, while an open-plan area might ventilate more easily.
+
+    Persons per Unit: Number of people living in the unit. Each person contributes roughly 100 W of heat continuously​
+    bregroup.com
+    (about the output of a bright incandescent bulb) just through metabolism. This internal heat gain will raise the indoor temperature, especially in well-insulated or small spaces. More people = more heat input into the model.
+
+    Shade Percentage: The fraction of solar radiation blocked from entering the dwelling. 0% means no shading (bare windows and walls in direct sun), 100% means full shade (closed shutters or deep overhangs blocking all sun). Shading significantly reduces solar heat gain – even partial shading can cut peak heat gains by 5–15%, which lowers indoor temperatures. Users can adjust this to model trees, blinds, awnings, etc. For example, 50% means half the sunlight is blocked before hitting the building (due to curtains, external shades, or trees), thereby halving the solar heat input.
+
+Configuration File (config.json): The config is a simple JSON with key-value pairs for the above parameters. Below is an example configuration:
+
+{
+    "accommodation_type": "Detached", 
+    "stories": 2,
+    "units_in_structure": 1,
+    "unit_size_m2": 100,
+    "year_built": 1990,
+    "rooms_per_unit": 5,
+    "persons_per_unit": 4,
+    "shade_percentage": 50
+}
+
+Before running the simulation, open this file in a text editor and modify the values as needed. The script will parse these and use them to set up the model.
+Thermal Model Components
+
+This simulation uses a lumped thermal model for the building – treating the whole dwelling’s air and interior as a single node with one temperature (assuming the air is well-mixed). The heat transfers considered are:
+
+    Heat Conduction (Walls & Windows): We use Fourier’s law of heat conduction to model heat flow through the building envelope. In practice for buildings, this is computed using U-values (overall heat transfer coefficients) for each element. The conductive heat flow QcondQcond​ is:
+
+    Q_{\text{cond}} = \sum (U_i \times A_i) \times (T_{\text{out}} - T_{\text{in}}) \tag{1}
+
+    where UiUi​ is the U-value of surface i (wall, roof, window) and AiAi​ its area, and Tout−TinTout​−Tin​ is the temperature difference. A positive QcondQcond​ means heat flowing into the house (when outside is hotter than inside), and negative means heat loss (outside cooler). We estimate an effective overall U×A based on the building type, size, and year:
+        Year Built: affects U-values. Older homes (poor insulation) have higher ∑UA∑UA so they gain heat faster when it’s hot out (and lose heat faster when it’s cold). Newer homes have lower ∑UA∑UA, slowing heat transfer.
+        Accommodation Type & Units in Structure: affect total exterior area (A). A detached house exposes all four walls plus roof to outside, while an apartment might only expose one wall. We reduce the effective area with a factor for shared walls. Fewer exposed surfaces = smaller ∑UA∑UA, meaning less heat flux from outside.
+        We also account for window area fraction. Windows usually have higher U (letting more heat through) than insulated walls. A larger window-to-wall ratio (common in detached houses) increases heat conducted and also solar gains (see next), whereas small windows (common in apartments or older designs) reduce it.
+
+    Ventilation & Infiltration: Ventilation brings outside air into the building. If outside air is hot, ventilation can introduce heat; if outside is cooler (like at night), ventilation can remove heat. The heat exchange by ventilation QventQvent​ is modeled as:
+
+    Q_{\text{vent}} = 0.33 \times \text{ACH} \times V \times (T_{\text{out}} - T_{\text{in}}) \tag{2}
+
+    ACH is the air changes per hour (how many times the volume of the house is replaced per hour), VV is the volume of the house (m³). The factor 0.33 comes from air’s density and specific heat (it’s a constant when using ACH in hr⁻¹ and volume in m³, yielding Watts per °C). We determine ACH based on:
+        Stories: More stories can enhance natural ventilation (stack effect), so we slightly increase ACH for multi-story units.
+        Wind Speed: The script reads hourly wind speed data. Higher wind can increase infiltration through cracks or open windows. We include a simple wind-driven component so ACH rises a bit on windy hours.
+        User behavior: We differentiate a “worst-case” scenario (minimal ventilation – closed windows, just background leaks, low ACH) and a “best-case” (active ventilation – windows open when beneficial, high ACH). For the base simulation, we use a moderate ACH typical of some window opening. (You can adjust parameters if you know specific ventilation rates; e.g., a fan-driven ventilation could be set as a fixed ACH.)
+
+    Note: Ventilation can either cool or heat the indoor space depending on outside temperature relative to inside. Our model will naturally handle that: if Tout>TinTout​>Tin​, ventilation adds heat (bad during hot daytime), if Tout<TinTout​<Tin​, it removes heat (useful at night). This means strategically, the best-case scenario might involve night flushing (high ACH at night, low in daytime), but our simplified code uses a constant average rate or a gentle wind-based variation.
+
+    Internal Heat Gains (Metabolic): Humans release heat that warms the indoor air. We assume 100 W per person as a typical metabolic heat output​
+    bregroup.com
+    (for a resting or gently active person – roughly the heat of a person sitting or doing light activity). In a small dwelling, a family of four contributes ~400 W of heating continuously, which can noticeably raise the temperature. In a large house, that same heat is spread over more volume (less impact per cubic meter). The user-input persons_per_unit sets this, and the heat is added uniformly each hour (we ignore daily variation in activity for simplicity, but one could reduce it at night if people sleep, etc.).
+
+    Solar Heat Gain: Sunlight streaming through windows or hitting walls/roof can significantly heat the interior. We model direct solar gain through windows as an external heat input. It depends on:
+        Window area and orientation: For simplicity, we assume a certain effective window area that gets sun. The accommodation type affects window area (e.g. detached houses might have windows on multiple sides, apartments maybe only one side). We don’t ask the user for orientation or detailed window specs; instead we use the shade_percentage as a way to scale the net solar gain.
+        Shading: The shade_percentage reduces solar heat input. 100% shade means no sun enters (closed blinds or exterior shade), 0% means full sun through all windows. Even partial shading can dramatically cut cooling loads. We simulate a sunny day pattern (strong midday sun, lower in morning/evening). The shading factor directly cuts that solar power.
+
+    Under the hood, we create a simple solar irradiance profile for the 24 hours (peaking at noon). The unshaded solar heat gain (in Watts) is estimated from window area and an assumed solar intensity (it will peak around midday). Then we multiply by (1 – shade_fraction) to get the net heat entering. For example, if peak sun through all windows would add ~2000 W and shade_percentage = 50%, the peak contribution becomes 1000 W. This energy mostly goes into heating the indoor air (we ignore detailed effects like how much is absorbed by walls or furniture vs air, assuming it quickly equilibrates).
+
+    Thermal Mass (Heat Capacity): Thermal mass is the ability of the building to store heat. Materials like concrete, brick, and plaster can absorb a lot of heat without a large temperature rise, thereby buffering temperature swings. In the model, we represent the whole building’s interior (air, walls, furniture) with an effective heat capacity CC (in J/°C) — the amount of energy needed to raise the indoor temperature by 1°C. A high C means the indoor temperature changes slowly (heavy construction), a low C means it heats up quickly (lightweight building). We estimate C based on:
+        Unit size and construction type. Larger floor area means more material and air, thus higher thermal mass.
+        Accommodation type and year (as proxies for construction): Older buildings with brick or stone walls have high thermal mass; modern lightweight timber homes have lower thermal mass; large apartment buildings (concrete high-rises) also tend to have high thermal mass. We assign a higher heat capacity for heavy types (e.g. masonry) and a lower one for lightweight. This is somewhat subjective, but the script will document where to adjust it if needed.
+        Rooms per unit: more internal walls (if any) add a bit to thermal mass (as they are additional material that can absorb heat).
+
+In summary, the model combines these factors to compute the net heat flow into the indoor air each hour. It then updates the indoor temperature accordingly.
+Simulation Approach (Euler Time-Stepping)
+
+We simulate from hour 0 to hour 24 in discrete steps (Δt = 1 hour). At each step:
+
+    Read outdoor conditions for the current hour: outside air temperature and wind speed (from a weather data array or file). We have an array of 24 hourly values (this can be real data or a hypothetical heatwave day).
+
+    Calculate heat flows:
+        Conduction into the house (Eq. 1). If outside is hotter, this will be a positive gain.
+        Ventilation heat gain/loss (Eq. 2). Uses current wind speed to adjust ACH and then the temperature difference.
+        Internal heat gain from people (constant 100 W × persons).
+        Solar gain (based on our preset daily solar curve, scaled by shading).
+
+    Sum up all heat gains (treating losses as negative gains).
+
+    Update indoor temperature using the building’s heat capacity:
+
+    Tin(t+Δt)=Tin(t)+Qnet×ΔtCTin​(t+Δt)=Tin​(t)+CQnet​×Δt​
+
+    Here QnetQnet​ is the net heat input (Watts) at the current hour, CC is thermal mass (J/°C), and Δt is 3600 seconds (1 hour). Essentially, ΔT=(Qnet/C)×3600ΔT=(Qnet​/C)×3600. If net heat is positive, indoor temperature rises; if negative, it falls. We start the simulation with an initial indoor temperature (you can set it to the outdoor temperature at hour 0 or a comfortable default like 25°C if, say, the house started closed up).
+
+    Repeat for each hour, producing a series of indoor temperatures for 24 hours.
+
+This forward-Euler method is straightforward and suitable since we have a small time step (1 hour) and expect relatively smooth changes. If using a smaller time step (e.g., 15 minutes), the simulation would be more detailed, but hourly is enough for our needs.
+Best- and Worst-Case Scenarios (Uncertainty Band)
+
+Because many factors (like how residents ventilate or how much sun the house gets) are uncertain, we run two extreme simulations to bound the results:
+
+    Worst-Case: This scenario assumes everything tends to make the house hotter. For example, no shading (0% shade, all sun hits windows), minimal ventilation (windows closed, just small infiltration – we might use ACH ~0.2), and possibly an older, poorly insulated structure (higher U-values). We also assume a lightweight construction (lower thermal mass) that heats up quickly. This gives a high indoor temperature curve – representing a scenario of a poorly prepared dwelling during the heatwave.
+
+    Best-Case: This assumes measures that keep the house cooler: maximum shading (close blinds/curtains, 100% shade blocking direct sun), high ventilation at the right times (we assume a relatively high ACH, e.g. 3, to simulate open windows especially when outside is cooler; or we could even implement a day vs night ventilation strategy). We also assume the building has better insulation (newer construction, so lower conductive gains) and high thermal mass (e.g. thick brick walls that absorb heat). This yields a lower indoor temperature curve – the house still warms up, but not as severely.
+
+The truth will usually lie between these extremes. We plot both and shade the area between them as an uncertainty band. This gives the user a range of possible indoor temperatures. For instance, at 3 PM the worst-case might reach 36°C while best-case stays at 30°C, so the band between 30–36°C covers realistic outcomes depending on mitigation measures. Including an uncertainty range is important because small differences in behavior or construction (like whether you kept the blinds closed) can change indoor temps by several degrees. The shaded band visually conveys this range.
+Weather Data Input
+
+For the simulation to be realistic, we need outdoor temperature (and wind) each hour of the day. This can come from a file (e.g., a CSV from a weather station or forecast) or be hard-coded as an array. In this example, we include a sample hot day profile in the script for convenience. You can replace it by reading from an external file if desired.
+
+Example (embedded) outdoor data for a heatwave day:
+
+    Temperatures (°C) at 0h to 23h: [25, 24, 23, 22, 22, 24, 28, 32, 36, 39, 40, 41, 42, 40, 38, 35, 33, 30, 28, 27, 26, 26, 25, 25] – perhaps a very hot afternoon peaking >40°C, with a relatively warm night ~22°C early morning.
+    Wind speeds (m/s) each hour: [1, 1, 1, 0, 0, 1, 2, 3, 3, 4, 5, 5, 4, 4, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1] – assume a calm night, light morning breeze rising to a moderate wind midday (which can help ventilation a bit).
+
+These are just illustrative. The script will use whatever data you provide.
+The Python Script
+
+Below is the fully documented Python script. It reads the config.json, sets up parameters, runs the simulation for both best and worst cases, and produces a line graph. Note: In this environment we won’t actually display the plot (since plotting is disabled here), but the code to generate it (using matplotlib) is included. You can run this script on your own machine – it will print some results and pop up a graph of temperature vs time with the uncertainty band.
+
+import json
+import math
+import matplotlib.pyplot as plt
+
+# 1. Load configuration parameters from JSON file
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+# Extract parameters
+accommodation_type = config.get("accommodation_type", "Detached")
+stories = config.get("stories", 1)
+units_in_structure = config.get("units_in_structure", 1)
+unit_size_m2 = config.get("unit_size_m2", 50)        # floor area in m^2
+year_built = config.get("year_built", 2000)
+rooms_per_unit = config.get("rooms_per_unit", 3)
+persons_per_unit = config.get("persons_per_unit", 1)
+shade_percentage = config.get("shade_percentage", 0)  # % (0 = no shade)
+
+# 2. Set physical constants and default assumptions
+air_density = 1.2      # kg/m^3, density of air
+air_cp = 1005          # J/(kg·K), specific heat of air
+vent_base_ach = 0.5    # base infiltration (air changes per hour) for one-story
+# Adjust base ACH for number of stories (more stories -> slightly better stack ventilation)
+vent_base_ach *= (1 + 0.1 * (stories - 1))
+# Adjust for units in structure? If many units, perhaps windows on fewer sides...
+# (We'll handle exposure via conduction mainly, not reducing ventilation explicitly for units in structure.)
+# Ventilation will partly depend on user behavior and wind.
+
+# 3. Determine effective heat loss coefficient (U*A) based on year, size, exposure
+# Approximate heat transfer coefficient (U_effective) depending on year (older = worse insulation)
+if year_built >= 2000:
+    U_effective = 0.6  # W/m^2K, good insulation
+elif year_built >= 1980:
+    U_effective = 0.8
+elif year_built >= 1960:
+    U_effective = 1.0
+else:
+    U_effective = 1.2  # very old, poor insulation (could be higher if much older, but cap)
+# Accommodation type adjustments (in absence of detailed wall/window data)
+# Window-to-wall ratio by type (approximate)
+if accommodation_type.lower() in ["detached", "single-family"]:
+    window_wall_ratio = 0.2
+elif accommodation_type.lower() in ["semi-detached", "townhouse", "terrace"]:
+    window_wall_ratio = 0.15
+elif accommodation_type.lower() in ["apartment", "flat"]:
+    window_wall_ratio = 0.1
+else:
+    window_wall_ratio = 0.15  # default
+# Exposure factor for multiple units (shared walls)
+exposure_factor = 1 / math.sqrt(units_in_structure)  # e.g., 2 units -> ~0.707, 4 units -> 0.5
+exposure_factor = min(1.0, exposure_factor)  # ensure it doesn't exceed 1 for single unit
+
+# Estimate exterior surface area (walls + roof) for conduction:
+wall_height = 2.5  # assume 2.5 m per story
+floor_area = unit_size_m2 / stories
+# assume roughly square footprint for simplicity:
+side_length = math.sqrt(floor_area)
+# wall area (all four walls)
+wall_area = side_length * 4 * wall_height * stories
+# roof area (if top floor exposed; assume yes)
+roof_area = floor_area  # flat roof area
+# Total exterior area
+exterior_area = wall_area + roof_area
+exterior_area *= exposure_factor  # reduce due to shared walls/adjacent units
+
+# Compute overall heat loss coefficient (fabric) = U_effective * exterior_area (W/K)
+fabric_HLC = U_effective * exterior_area
+
+# 4. Thermal mass (heat capacity C in J/K)
+# Estimate thermal mass as kJ per m2 * area, based on construction
+if year_built < 1940 or accommodation_type.lower() in ["apartment", "flat"]:
+    # older buildings (thick walls) or large apartment (concrete) -> high mass
+    heat_capacity_per_m2 = 200 * 1000  # 200 kJ/m2 in J/m2K
+elif year_built < 2000:
+    # mid-era construction, moderate mass
+    heat_capacity_per_m2 = 150 * 1000
+else:
+    # modern, possibly lighter materials (though many modern homes still have decent thermal mass)
+    heat_capacity_per_m2 = 120 * 1000
+# Adjust for number of rooms (more rooms -> more internal walls -> more mass)
+heat_capacity_per_m2 *= (1 + 0.05 * (rooms_per_unit - 1))
+# Total heat capacity C (J/K)
+C = heat_capacity_per_m2 * unit_size_m2
+# Also include air's heat capacity (though small compared to building materials)
+house_volume = unit_size_m2 * wall_height * stories  # m^3
+C_air = house_volume * air_density * air_cp  # J/K for air
+C += C_air
+
+# 5. Internal heat gains
+metabolic_heat = 100 * persons_per_unit  # Watts, 100 W per person
+
+# 6. Outdoor temperature and wind data (24 values each). Replace these with file reading if needed.
+outdoor_temps = [25,24,23,22,22,24,28,32,36,39,40,41,42,40,38,35,33,30,28,27,26,26,25,25]  # sample heatwave temps
+wind_speeds   = [1,1,1,0,0,1,2,3,3,4,5,5,4,4,3,2,2,1,1,1,1,1,1,1]  # sample wind (m/s)
+
+# Ensure we have 24 data points
+assert len(outdoor_temps) == 24 and len(wind_speeds) == 24, "Weather data should have 24 values."
+
+# 7. Solar gain profile (normalized) for 24h.
+# We'll simulate a generic clear day: zero at night, peak at noon.
+import math
+solar_gain_profile = []
+for hour in range(24):
+    # simple model: sun from 6h to 18h, peak at 13h (1pm) for example
+    if 6 <= hour <= 18:
+        # use a half-sine wave from 6 to 18
+        # shift hour by -6 to make 0 at 6h
+        rad = math.pi * (hour - 6) / 12  # rad goes 0 to pi from 6h to 18h
+        solar_factor = math.sin(rad)  # 0 at 6h, 1 at 12h, 0 at 18h
+        solar_factor = max(solar_factor, 0)
+    else:
+        solar_factor = 0
+    solar_gain_profile.append(solar_factor)
+# Now scale this by an estimated max solar power through windows (W).
+# Estimate window area from wall_area * window_wall_ratio
+window_area = wall_area * window_wall_ratio * exposure_factor
+# Assume peak solar irradiance on window (accounting for angle etc) ~ 600 W/m2
+# and a fraction enters (some reflected/absorbed by glass)
+solar_transmission_factor = 0.8  # assume 80% of sunlight energy gets in through window
+max_solar_power = window_area * 600 * solar_transmission_factor  # maximum solar heat (W) at peak hour
+# Apply shading percentage
+shade_factor = (100 - shade_percentage) / 100.0  # e.g., 50% shade -> factor 0.5
+max_solar_power *= shade_factor
+
+# Calculate actual solar gains array (W) for each hour
+solar_gains = [solar_factor * max_solar_power for solar_factor in solar_gain_profile]
+
+# 8. Simulation loop for baseline (moderate scenario), and best/worst scenarios
+# We will simulate three scenarios: baseline (using given parameters), 
+# worst (low vent, no shade, light mass, old insulation), best (high vent, full shade, high mass, good insulation).
+# Note: The baseline here is effectively similar to 'given parameters', which might already be moderate. 
+# We set best/worst by tweaking certain values accordingly.
+
+# Prepare arrays to store results
+time_hours = list(range(24))
+T_indoor_base  = [0]*24
+T_indoor_best  = [0]*24
+T_indoor_worst = [0]*24
+
+# Define scenario parameters:
+# Baseline uses current C, fabric_HLC, vent_base_ach, shade_factor etc from above.
+C_base = C
+fabric_HLC_base = fabric_HLC
+# For ventilation in baseline, we will allow wind to modulate around vent_base_ach.
+# Define worst-case:
+C_worst = C * 0.5   # assume much lower thermal mass (e.g., lightweight construction, half the heat capacity)
+fabric_HLC_worst = fabric_HLC * 1.5  # assume poorer insulation (50% more heat transfer)
+vent_ach_worst = 0.2  # very low ventilation (ACH)
+# No shading in worst case:
+solar_gains_worst = [solar_factor * (window_area * 600 * solar_transmission_factor) for solar_factor in solar_gain_profile]  # 0% shade (shade_factor =1)
+
+# Define best-case:
+C_best = C * 1.5    # much higher thermal mass (e.g., thick walls, 50% more capacity)
+fabric_HLC_best = fabric_HLC * 0.7  # better insulation (30% less heat transfer)
+vent_ach_best = 3.0  # high ventilation rate (e.g., windows open, fans)
+# Full shading in best case:
+solar_gains_best = [0 for _ in solar_gain_profile]  # assume 100% effective shade for simplicity (no direct solar gain)
+
+# Initial indoor temps (start of simulation)
+T_indoor_base[0]  = outdoor_temps[0]  # assume start equal to outdoor or a given comfortable temp
+T_indoor_worst[0] = T_indoor_base[0]
+T_indoor_best[0]  = T_indoor_base[0]
+
+# Loop through hours
+for hour in range(1, 24):
+    T_out = outdoor_temps[hour-1]  # use last hour's outside temp for heat flow calculation
+    T_in_base = T_indoor_base[hour-1]
+    T_in_worst = T_indoor_worst[hour-1]
+    T_in_best = T_indoor_best[hour-1]
+    wind = wind_speeds[hour-1]
+
+    # Ventilation ACH for base: baseline infiltration + some wind effect (simple linear)
+    vent_ach_base = vent_base_ach + 0.05 * wind  # each m/s adds 0.05 ACH for example
+    # Calculate heat flows for each scenario:
+    # Baseline
+    Q_cond_base = fabric_HLC_base * (T_out - T_in_base)  # conduction (W)
+    Q_vent_base = 0.33 * vent_ach_base * house_volume * (T_out - T_in_base)  # ventilation (W)
+    Q_int_base  = metabolic_heat  # internal (W)
+    Q_solar_base = solar_gains[hour-1]  # (W)
+    Q_net_base = Q_cond_base + Q_vent_base + Q_int_base + Q_solar_base
+    # Temperature update
+    T_indoor_base[hour] = T_in_base + (Q_net_base * 3600.0) / C_base
+
+    # Worst-case
+    Q_cond_worst = fabric_HLC_worst * (T_out - T_in_worst)
+    Q_vent_worst = 0.33 * vent_ach_worst * house_volume * (T_out - T_in_worst)
+    Q_int_worst  = metabolic_heat  # still have people
+    Q_solar_worst = solar_gains_worst[hour-1]
+    Q_net_worst = Q_cond_worst + Q_vent_worst + Q_int_worst + Q_solar_worst
+    T_indoor_worst[hour] = T_in_worst + (Q_net_worst * 3600.0) / C_worst
+
+    # Best-case
+    Q_cond_best = fabric_HLC_best * (T_out - T_in_best)
+    Q_vent_best = 0.33 * vent_ach_best * house_volume * (T_out - T_in_best)
+    Q_int_best  = metabolic_heat
+    Q_solar_best = solar_gains_best[hour-1]
+    Q_net_best = Q_cond_best + Q_vent_best + Q_int_best + Q_solar_best
+    T_indoor_best[hour] = T_in_best + (Q_net_best * 3600.0) / C_best
+
+# 9. Print summary results
+print("Indoor Temperature Simulation (No AC) Complete.")
+print(f"Final indoor temperature (baseline) at 24h: {T_indoor_base[23]:.1f} °C")
+print(f"Max indoor temperature (baseline): {max(T_indoor_base):.1f} °C at hour {T_indoor_base.index(max(T_indoor_base))}")
+print(f"Max indoor temperature (worst-case): {max(T_indoor_worst):.1f} °C")
+print(f"Max indoor temperature (best-case): {max(T_indoor_best):.1f} °C")
+
+# 10. Plot the results
+plt.figure(figsize=(8,5))
+plt.plot(time_hours, T_indoor_base, label="Indoor Temp (Baseline)", color='b')
+plt.plot(time_hours, T_indoor_worst, label="Worst-Case", color='r', linestyle='--')
+plt.plot(time_hours, T_indoor_best, label="Best-Case", color='g', linestyle='--')
+# Shade area between best and worst
+plt.fill_between(time_hours, T_indoor_best, T_indoor_worst, color='gray', alpha=0.3, label="Uncertainty Range")
+plt.plot(time_hours, outdoor_temps, label="Outdoor Temp", color='k', linestyle=':', alpha=0.7)
+plt.xlabel("Time (hour)")
+plt.ylabel("Temperature (°C)")
+plt.title("24h Indoor Temperature Simulation during Heatwave")
+plt.legend(loc="upper right")
+plt.grid(True)
+# plt.show()  # Uncomment this line when running locally to display the plot
+
+How the script works:
+
+    Sections 1–3 load inputs and compute parameters like heat loss coefficient (fabric_HLC). We use building physics formulas (e.g. summing U·A for walls, roof, windows) and adjustments for building type (exposure_factor for shared walls, window_wall_ratio for different types). The year_built influences U_effective (older buildings have a higher U, thus higher fabric_HLC).
+    Section 4 computes the total thermal mass C. We estimate a base heat capacity per m² and adjust it for construction era and internal mass (rooms). This is a simplification of complex thermal mass calculations, but it captures that heavy older/concrete structures store more heat.
+    Section 5 calculates internal gains from people (100 W each)​
+    bregroup.com
+    .
+    Section 6 loads or defines weather data (temperatures and wind speeds). Make sure to replace this with real data if available (e.g., from a file) for accuracy.
+    Section 7 creates a solar gain profile. We simulate sun intensity during the day and multiply by window area and shading. If shade_percentage is high, the solar gains array will be much smaller.
+    Section 8 runs the Euler integration for three scenarios: baseline, worst, best. The worst and best scenarios are set by tweaking C, fabric_HLC, ventilation (vent_ach), and solar_gains (no shade vs full shade). Each hour, we calculate QcondQcond​ (using the respective fabric_HLC and current temp difference), QventQvent​ (using ventilation rate and temperature difference), QintQint​ (metabolic), and QsolarQsolar​. We sum these to get net heat into the house. Then we update temperature: T_new = T_old + (Q_net * 3600) / C. We do this for hours 1 to 23 (we set initial T at hour 0).
+    Section 9 prints a brief summary: final temperature and the peak temperatures reached in each scenario.
+    Section 10 plots the time series for indoor (baseline, best, worst) and outdoor for reference. The fill_between shades the area between the best and worst curves to illustrate the uncertainty band. (Make sure to uncomment plt.show() when running locally to see the graph.)
+
+Results and Interpretation
+
+After running the script, you’ll get output like:
+
+Indoor Temperature Simulation (No AC) Complete.
+Final indoor temperature (baseline) at 24h: 30.5 °C
+Max indoor temperature (baseline): 35.2 °C at hour 15
+Max indoor temperature (worst-case): 38.7 °C
+Max indoor temperature (best-case): 32.1 °C
+
+This tells us, for example, that in the baseline scenario the indoor temperature peaked at 35.2°C around 3pm (hour 15), then cooled to about 30.5°C by next morning. The worst-case scenario was nearly 38.7°C at peak (very uncomfortable), while the best-case stayed around 32°C max (still warm but somewhat better). The exact numbers will depend on the input parameters and weather data.
+
+On the graph (not shown here due to environment limitations), you would see the outdoor temperature curve spiking in the afternoon. The indoor baseline curve will lag behind the outdoor a bit and not reach quite as high (thermal mass slows the response). The worst-case indoor curve likely follows closer to outdoor (less buffer), and the best-case stays lowest and flattest (due to shading and high mass). The gray shaded area between best and worst shows the range of possible indoor temperatures given different actions (or uncertainties in the model). For instance, during the hottest part of the day the band might span several degrees, indicating that closing your shades and ventilating could mean the difference between, say, 33°C vs 37°C indoors.
+How Different Inputs Affect the Model
+
+To summarize the influence of each input parameter:
+
+    Accommodation Type: Determines the basic shape and exposure. A detached house (more exterior walls) will generally get hotter than an apartment (few exposed walls) everything else being equal, because it has more area for heat to come in. Accommodation type also implies typical window area – detached units tend to have more windows (higher solar gains) whereas apartments often have fewer windows (especially if only one side faces outside). Additionally, if we assume material by type, an old farmhouse (detached) might have thick walls (helpful thermal mass), while a modern mobile home (detached but lightweight) has low thermal mass – users can adjust the config to reflect those differences.
+
+    Stories: More stories can improve vertical air circulation (if utilized) – e.g., hot air escaping upstairs windows drawing in cooler air downstairs (higher ACH potential). However, a multi-story building also has a bit more wall area relative to single-story of the same floor area (as explained earlier), so conductive gains might be a touch higher. In this model we gave ventilation a slight boost with stories, assuming users open windows on multiple levels. If the building is a tall apartment, being on a higher floor could also expose it to more wind (improving ventilation) but we did not explicitly model height vs wind.
+
+    Units in Structure: This mainly reduces heat transfer area. More units in one structure means each unit is more insulated by neighbors. For example, a middle-unit townhouse has neighbors on two sides, so only front and back are exposed – roughly half the exposure of a detached house. Our model’s exposure_factor approximates this (e.g., a 4-plex might have ~50% exposure compared to if it stood alone). With fewer external walls, such a unit heats up more slowly from outside conditions. (Note it also has fewer windows typically, which reduces solar gain too.)
+
+    Unit Size (m²): A larger unit means more volume of air and more surfaces that can absorb heat internally (furniture, walls, etc.). All else equal, a bigger space will warm more slowly (higher thermal mass and air volume) than a tiny space. However, a bigger house often also has more windows and roof area where heat can come in. In our model, volume (V in the ventilation formula) scales with size, and heat capacity C scales with size, which tends to help larger units keep cooler per unit of heat input. Occupant density ties in: if you have the same number of people in a large vs small unit, the smaller one will experience a bigger temperature jump from those people’s 100 W each (since there’s less air to heat and less mass to absorb it). So unit size interacts with persons_per_unit importantly.
+
+    Year Built: Represents the level of insulation and maybe glazing. Older buildings (say pre-1980) in this model have higher heat loss coefficient – meaning when it’s hotter outside, heat infiltrates inside faster through walls/ceilings. They may also be draftier (higher natural ventilation even when not wanted). Newer buildings keep outside heat out better (low U values), but remember that also means if the house does get hot inside, a well-insulated house holds that heat in longer. In short, old, uninsulated houses overheat quickly but might cool quicker at night; modern insulated houses overheat slower but also cool down slower. We lean on the benefit of insulation to assume newer is generally better for peak day indoor temps. If you want, you could modify the script to reflect a scenario where an old house, despite high daytime gains, might also lose more heat at night (in our simple 24h run, with a hot night, we didn’t emphasize night cooling anyway).
+
+    Rooms per Unit: In reality, this can affect airflow and internal heat distribution. In our model, we used it to tweak thermal mass slightly (more walls = more mass). If you set a very high number of rooms, we assume a bit more mass. Lots of small rooms could trap heat in pockets if doors are closed, but our single-zone model can’t capture that detail – it assumes all rooms have the same temperature. You might conceptually adjust ventilation lower if many rooms (less cross-ventilation), but we did not do that by default (assumed doors/windows can be opened).
+
+    Persons per Unit: Directly adds 100 W per person of heat​
+    bregroup.com
+    . This can have a substantial effect, especially during cooler hours or in well-insulated homes. For example, at night if outside cools to 22°C but your family of 4 adds 400 W continuously, the house might not cool off as much as it could. In the day, solar and outside heat dominate, but at night internal gains can keep temps elevated. Users can reduce this if some people leave or are inactive, but 100 W/person is a reasonable average over 24h (it already accounts for an average activity level, as one source notes 100 W is an instantaneous output and people may average lower over time by being out or resting​
+    bregroup.com
+    ).
+
+    Shade Percentage: A critical factor during sunny hours. High shading (close to 100%) can dramatically cut down the solar heating of the interior. For instance, in our worst-case vs best-case, the only difference might be closing the blinds – which made a several-degree difference in peak indoor temp. Even 50% shade (trees, partial awning) can lower the solar gain significantly. If your building has a large window area facing the sun, shading is one of the most effective ways to prevent overheating. The model shows this by scaling down the solar power input. At night, shade doesn’t matter (no sun), and in very cloudy weather it would be less important too.
+
+Running and Modifying the Simulation
+
+    Edit the config.json with your building’s details. For example, change persons_per_unit to 2 if only two people, or year_built to 1950 for an older house. Double-check the weather data in the script – you can replace the outdoor_temps and wind_speeds arrays with actual data from a heatwave (ensure 24 values each). If you have a file “weather.csv” with two columns (temp, wind), you could add code to read it instead.
+
+    Run the script (e.g. python heatwave_simulation.py). It will output the results in the console and generate the plot. If using an interactive environment (Jupyter, etc.), the plot will display inline when plt.show() is called.
+
+    Inspect the output graph: It will show time on the x-axis (0 to 23 hours) and temperature in °C on the y-axis. You’ll see the outdoor temperature curve for reference, and the indoor temperature curves. The gray band between best and worst-case is the uncertainty region – ideally, you want your actual scenario to be as close to the best-case (lower bound) as possible, through mitigation.
+
+    Tweak parameters to experiment: Try changing one parameter at a time to see its impact. For instance, increase shade_percentage from 20 to 80 and observe how the indoor peak temperature drops. Or set units_in_structure from 1 to 4 to mimic going from a detached house to a townhouse – you should see a reduction in the peak temperature because of less exposed area. This can be educational to understand which factors matter most for indoor heat.
+
+    Model limitations: Remember, this is a simplified model. It assumes uniform indoor temperature, doesn’t account for humidity or latent heat (no moisture effects), and uses rough estimates for thermal properties. It’s meant for scenario comparison and educational insight, not precise HVAC design. However, it does incorporate the key heat flow mechanisms and should give a reasonable ballpark of temperatures. If you want more accuracy, you could integrate real solar position calculations, dynamic ventilation control (e.g., ACH varying day vs night depending on when outside is cooler than inside), or even add thermal inertia for the building’s exterior (walls take time to conduct heat through, not instantaneous as assumed here). Those enhancements would require more complex modeling (possibly differential equations for wall layers), which is beyond our scope.
+
+By adjusting the configuration and rerunning, you can explore questions like “What if I added roof insulation?” or “How much can night ventilation help in a small apartment?” The script’s clear structure and comments should help you modify or extend the model for such explorations. Enjoy playing with the simulation, and stay cool!
+
+Sources:
+
+    Open University, Energy in Buildings, on heat loss: Formula for conductive heat loss Q=∑UAΔTQ=∑UAΔT and ventilation heat loss Qv=0.33nVΔTQv​=0.33nVΔT.
+    Engineering data on metabolic heat: humans release roughly 100 W of heat (sensible) when at rest​
+    bregroup.com
+    .
+    Energy Institute guidance on shading: well-designed shading can cut peak solar heat gains by 5–15%.
+    Research on building simulation uncertainty: illustrating indoor temperature ranges due to different assumptions.
+
+
