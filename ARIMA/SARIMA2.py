@@ -3,41 +3,24 @@ import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 import matplotlib.pyplot as plt
 
-# Load the yearly dataset
+# Load the datasets
 yearly_data = pd.read_csv('ARIMA/yearly_trend.csv')
-yearly_data['Year'] = pd.to_datetime(yearly_data['Year'], format='%Y')  # Convert 'Year' to datetime
-yearly_data.set_index('Year', inplace=True)  # Set 'Year' as the index
+monthly_data = pd.read_csv('ARIMA/monthly_trend.csv')
+# Identify peak values in the yearly trend
+peak_years = yearly_data[yearly_data['Value'] == yearly_data['Value'].max()]
 
-# Load the monthly dataset
-monthly_data = pd.read_csv('ARIMA/monthly_trend.csv', header=None, names=['Month', 'Value'])
-monthly_data['Month'] = monthly_data['Month'].astype(str).str.zfill(2)  # Ensure month is two digits (e.g., '01' for January)
-
-# Create a date column for the monthly data (assume all data is for the most recent year in the yearly dataset)
-most_recent_year = yearly_data.index.max().year  # Extract the year as an integer
-monthly_data['Date'] = pd.to_datetime(
-    str(most_recent_year) + '-' + monthly_data['Month'] + '-01', format='%Y-%m-%d'  # Correct format
-)
-monthly_data.set_index('Date', inplace=True)
-
-# Identify the peak year in the yearly trend
-peak_year = yearly_data['value'].idxmax()
-
-# Filter monthly data for the peak year
-peak_monthly_data = monthly_data[monthly_data.index.year == peak_year.year]
+# Filter monthly data for the peak years
+peak_monthly_data = monthly_data[monthly_data.index.year.isin(peak_years.index.year)]
 
 # Combine yearly and monthly data for modeling
-# Resample monthly data to yearly frequency by taking the mean
-monthly_resampled = peak_monthly_data.resample('Y').mean()
-
-# Combine with yearly data
-combined_data = pd.concat([yearly_data['value'], monthly_resampled['Value']])
+combined_data = pd.concat([yearly_data, peak_monthly_data.resample('Y').mean()])
 
 # Drop NaN values (if any)
 combined_data.dropna(inplace=True)
 
 # Fit an ARIMA model
 # Adjust the order (p, d, q) as needed based on your data
-model = ARIMA(combined_data, order=(5, 1, 0))  # Example order, tune as needed
+model = ARIMA(combined_data['Value'], order=(5, 1, 0))
 model_fit = model.fit()
 
 # Forecast the next few years
@@ -50,7 +33,7 @@ forecast_df = pd.DataFrame(forecast, index=forecast_index, columns=['Forecast'])
 
 # Plot the results
 plt.figure(figsize=(10, 6))
-plt.plot(combined_data.index, combined_data, label='Historical Data')
+plt.plot(combined_data.index, combined_data['Value'], label='Historical Data')
 plt.plot(forecast_df.index, forecast_df['Forecast'], label='Forecast', color='red')
 plt.title('ARIMA Model: Historical Data and Forecast')
 plt.xlabel('Year')

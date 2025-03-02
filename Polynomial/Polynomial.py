@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import warnings
 import random
 import csv
-warnings.simplefilter("error", RuntimeWarning)
+warnings.filterwarnings("ignore") # Stops lots of warning notices
 
 class polynomial_trend:
     def __init__(self, filename, order=0, show=False, random=False):
@@ -85,15 +85,16 @@ class polynomial_trend:
             plt.plot(x_xtra, y_xtra, color='red', linestyle="dashed")
         plt.show()
     
-    def regress(self, order, rate=0.00001, tolerance=0.0001, max_iterations=20000):
+    def regress(self, order, rate=0.00001, tolerance=0.0001, max_iterations=20000, coefficients=None):
         """
         really good at cubic but quite bad at anything < 3
         """
         try:
-            coefficients = np.ones(order + 1)
-            scale_factor = (max(self.xs) - min(self.xs)) ** (1 / order)
-            for i in range(1, len(coefficients)):
-                coefficients[i] = scale_factor / (i ** 2)
+            if (coefficients == None):
+                coefficients = np.ones(order + 1)
+                scale_factor = (max(self.xs) - min(self.xs)) ** (1 / order)
+                for i in range(1, len(coefficients)):
+                    coefficients[i] = scale_factor / (i ** 2)
             # ^initialise the coeffs like this to avoid overflow, from them being too far 
             # from the datapoints initially. dont use random coeffs because this makes 
             # repeats inconsistent
@@ -168,5 +169,6 @@ class polynomial_trend:
         k = len(coeffs)
         return (n * np.log(mse)) + (k * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True)
-newtrend.general_regress(2)
+newtrend = polynomial_trend(r'.\Polynomial\yearly_trend.csv', show=True)
+coeffs = newtrend.regress(4, rate=1e-15, tolerance=1e-17, coefficients=[3.5, 0, 0, 0, 0])
+newtrend.plot_data(coeffs)
