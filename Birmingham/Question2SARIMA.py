@@ -107,7 +107,7 @@ def grid_search_sarima(x, y, param_grid, seasonal_period=12, forecast_steps=12):
     axs[1].plot(forecast_mean.index, forecast_monthly, label='Seasonally Adjusted Forecast', color='purple')
     axs[1].set_title('Monthly Seasonal Pattern Applied to Forecast')
     axs[1].set_xlabel('Date')
-    axs[1].set_ylabel('Value')
+    axs[1].set_ylabel('kWh per capita')
     axs[1].legend()
     
     plt.tight_layout()
