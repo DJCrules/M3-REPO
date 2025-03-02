@@ -1,220 +1,261 @@
-import json
 import math
 import matplotlib.pyplot as plt
 
-# 1. Load configuration parameters from JSON file
-with open('configuration_params.json', 'r') as f:
-    config = json.load(f)
+###############################################################################
+# 1) USER INPUTS: EDIT THESE AS NEEDED
+###############################################################################
 
-# Extract parameters
-accommodation_type = config.get("accommodation_type", "Detached")
-stories = config.get("stories", 1)
-units_in_structure = config.get("units_in_structure", 1)
-unit_size_m2 = config.get("unit_size_m2", 50)        # floor area in m^2
-year_built = config.get("year_built", 2000)
-rooms_per_unit = config.get("rooms_per_unit", 3)
-persons_per_unit = config.get("persons_per_unit", 1)
-shade_percentage = config.get("shade_percentage", 0)  # % (0 = no shade)
+# a) Dwelling characteristics
+accommodation_type = "Detached"      # e.g. "Detached", "Semi-detached", "Apartment"
+stories = 2                          # number of floors
+units_in_structure = 1              # 1 => single-family home, >1 => shared building
+unit_size_m2 = 100                  # total floor area in m^2
+year_built = 1990                   # affects insulation level
+rooms_per_unit = 5                  # simple factor for thermal mass adjustments
+persons_per_unit = 4                # each person adds ~100 W heat
+shade_percentage = 50               # shading fraction in percent (0 => no shade, 100 => fully shaded)
 
-# 2. Set physical constants and default assumptions
-air_density = 1.2      # kg/m^3, density of air
-air_cp = 1005          # J/(kg·K), specific heat of air
-vent_base_ach = 0.5    # base infiltration (air changes per hour) for one-story
-# Adjust base ACH for number of stories (more stories -> slightly better stack ventilation)
-vent_base_ach *= (1 + 0.1 * (stories - 1))
-# Adjust for units in structure? If many units, perhaps windows on fewer sides...
-# (We'll handle exposure via conduction mainly, not reducing ventilation explicitly for units in structure.)
-# Ventilation will partly depend on user behavior and wind.
+# b) Outdoor weather data (24 hours)
+#    Here is a sample heatwave day (°C) & wind speeds (m/s). Edit or replace.
+outdoor_temps = [
+    25, 24, 23, 22, 22, 24, 28, 32, 36, 39, 
+    40, 41, 42, 40, 38, 35, 33, 30, 28, 27, 
+    26, 26, 25, 25
+]
+wind_speeds = [
+    1, 1, 1, 0, 0, 1, 2, 3, 3, 4,
+    5, 5, 4, 4, 3, 2, 2, 1, 1, 1,
+    1, 1, 1, 1
+]
+# Ensure both lists have 24 values
+assert len(outdoor_temps) == 24, "outdoor_temps must have 24 values."
+assert len(wind_speeds)   == 24, "wind_speeds must have 24 values."
 
-# 3. Determine effective heat loss coefficient (U*A) based on year, size, exposure
-# Approximate heat transfer coefficient (U_effective) depending on year (older = worse insulation)
+###############################################################################
+# 2) MODEL PARAMETERS & COMPUTATIONS
+###############################################################################
+
+# --- Physical constants & default assumptions ---
+air_density = 1.2        # kg/m^3
+air_cp = 1005            # J/(kg·K)
+metabolic_heat = 100.0 * persons_per_unit  # W, internal gains from occupants
+
+# 2.1 Ventilation base rate (in ACH: air changes per hour), adjusted by stories
+vent_base_ach = 0.5                      # baseline for single-story
+vent_base_ach *= (1 + 0.1 * (stories-1)) # more stories => slightly better stack effect
+
+# 2.2 Effective U-value depends on year built
 if year_built >= 2000:
-    U_effective = 0.6  # W/m^2K, good insulation
+    U_effective = 0.6   # W/m^2K
 elif year_built >= 1980:
     U_effective = 0.8
 elif year_built >= 1960:
     U_effective = 1.0
 else:
-    U_effective = 1.2  # very old, poor insulation (could be higher if much older, but cap)
-# Accommodation type adjustments (in absence of detailed wall/window data)
-# Window-to-wall ratio by type (approximate)
-if accommodation_type.lower() in ["detached", "single-family"]:
-    window_wall_ratio = 0.2
-elif accommodation_type.lower() in ["semi-detached", "townhouse", "terrace"]:
-    window_wall_ratio = 0.15
-elif accommodation_type.lower() in ["apartment", "flat"]:
-    window_wall_ratio = 0.1
+    U_effective = 1.2
+
+# 2.3 Window-to-wall ratio depends on accommodation type (approx)
+accom_lower = accommodation_type.lower()
+if "detached" in accom_lower:
+    # E.g. "Detached", "Semi-detached" might vary
+    if accom_lower == "detached":
+        window_wall_ratio = 0.20
+    else:
+        # "semi-detached" or "townhouse"
+        window_wall_ratio = 0.15
+elif "apartment" in accom_lower or "flat" in accom_lower:
+    window_wall_ratio = 0.10
 else:
-    window_wall_ratio = 0.15  # default
-# Exposure factor for multiple units (shared walls)
-exposure_factor = 1 / math.sqrt(units_in_structure)  # e.g., 2 units -> ~0.707, 4 units -> 0.5
-exposure_factor = min(1.0, exposure_factor)  # ensure it doesn't exceed 1 for single unit
+    # default guess
+    window_wall_ratio = 0.15
 
-# Estimate exterior surface area (walls + roof) for conduction:
-wall_height = 2.5  # assume 2.5 m per story
-floor_area = unit_size_m2 / stories
-# assume roughly square footprint for simplicity:
+# 2.4 Exposure factor for multi-unit structures (shared walls => less exterior exposure)
+exposure_factor = 1.0 / math.sqrt(units_in_structure)
+exposure_factor = min(1.0, exposure_factor)  # ensure not >1
+
+# 2.5 Estimate exterior surface area
+wall_height = 2.5 * stories   # total height in m
+# assume roughly square layout
+floor_area = unit_size_m2     # for entire unit
 side_length = math.sqrt(floor_area)
-# wall area (all four walls)
-wall_area = side_length * 4 * wall_height * stories
-# roof area (if top floor exposed; assume yes)
-roof_area = floor_area  # flat roof area
-# Total exterior area
-exterior_area = wall_area + roof_area
-exterior_area *= exposure_factor  # reduce due to shared walls/adjacent units
+# walls area
+wall_area = side_length * 4 * wall_height
+# roof area (top floor)
+roof_area = floor_area
+# total
+exterior_area = (wall_area + roof_area) * exposure_factor
 
-# Compute overall heat loss coefficient (fabric) = U_effective * exterior_area (W/K)
+# overall conduction coefficient = U * area (W/K)
 fabric_HLC = U_effective * exterior_area
 
-# 4. Thermal mass (heat capacity C in J/K)
-# Estimate thermal mass as kJ per m2 * area, based on construction
-if year_built < 1940 or accommodation_type.lower() in ["apartment", "flat"]:
-    # older buildings (thick walls) or large apartment (concrete) -> high mass
-    heat_capacity_per_m2 = 200 * 1000  # 200 kJ/m2 in J/m2K
+# 2.6 Thermal mass (heat capacity C in J/K)
+#    Rough estimate: older construction might have heavier materials, etc.
+if year_built < 1940 or "apartment" in accom_lower:
+    heat_capacity_per_m2 = 200_000  # J/m^2K
 elif year_built < 2000:
-    # mid-era construction, moderate mass
-    heat_capacity_per_m2 = 150 * 1000
+    heat_capacity_per_m2 = 150_000
 else:
-    # modern, possibly lighter materials (though many modern homes still have decent thermal mass)
-    heat_capacity_per_m2 = 120 * 1000
-# Adjust for number of rooms (more rooms -> more internal walls -> more mass)
-heat_capacity_per_m2 *= (1 + 0.05 * (rooms_per_unit - 1))
-# Total heat capacity C (J/K)
-C = heat_capacity_per_m2 * unit_size_m2
-# Also include air's heat capacity (though small compared to building materials)
-house_volume = unit_size_m2 * wall_height * stories  # m^3
-C_air = house_volume * air_density * air_cp  # J/K for air
-C += C_air
+    heat_capacity_per_m2 = 120_000
+# Adjust for internal walls => more rooms => more mass
+heat_capacity_per_m2 *= (1 + 0.05*(rooms_per_unit-1))
 
-# 5. Internal heat gains
-metabolic_heat = 100 * persons_per_unit  # Watts, 100 W per person
+C_building = heat_capacity_per_m2 * unit_size_m2
 
-# 6. Outdoor temperature and wind data (24 values each). Replace these with file reading if needed.
-outdoor_temps = [25,24,23,22,22,24,28,32,36,39,40,41,42,40,38,35,33,30,28,27,26,26,25,25]  # sample heatwave temps
-wind_speeds   = [1,1,1,0,0,1,2,3,3,4,5,5,4,4,3,2,2,1,1,1,1,1,1,1]  # sample wind (m/s)
+# also include air mass in the house
+house_volume = floor_area * 2.5 * stories
+C_air = house_volume * air_density * air_cp
+C_total_base = C_building + C_air  # baseline scenario
 
-# Ensure we have 24 data points
-assert len(outdoor_temps) == 24 and len(wind_speeds) == 24, "Weather data should have 24 values."
+# 2.7 Shading factor
+shade_factor = (100.0 - shade_percentage)/100.0  # e.g. 50% => 0.5
 
-# 7. Solar gain profile (normalized) for 24h.
-# We'll simulate a generic clear day: zero at night, peak at noon.
-import math
+# 2.8 Solar gains: basic half-sine wave from 6h to 18h for demonstration
 solar_gain_profile = []
 for hour in range(24):
-    # simple model: sun from 6h to 18h, peak at 13h (1pm) for example
     if 6 <= hour <= 18:
-        # use a half-sine wave from 6 to 18
-        # shift hour by -6 to make 0 at 6h
-        rad = math.pi * (hour - 6) / 12  # rad goes 0 to pi from 6h to 18h
-        solar_factor = math.sin(rad)  # 0 at 6h, 1 at 12h, 0 at 18h
+        rad = math.pi * (hour - 6)/12.0
+        solar_factor = math.sin(rad)
         solar_factor = max(solar_factor, 0)
     else:
         solar_factor = 0
     solar_gain_profile.append(solar_factor)
-# Now scale this by an estimated max solar power through windows (W).
-# Estimate window area from wall_area * window_wall_ratio
+# Window area
 window_area = wall_area * window_wall_ratio * exposure_factor
-# Assume peak solar irradiance on window (accounting for angle etc) ~ 600 W/m2
-# and a fraction enters (some reflected/absorbed by glass)
-solar_transmission_factor = 0.8  # assume 80% of sunlight energy gets in through window
-max_solar_power = window_area * 600 * solar_transmission_factor  # maximum solar heat (W) at peak hour
-# Apply shading percentage
-shade_factor = (100 - shade_percentage) / 100.0  # e.g., 50% shade -> factor 0.5
-max_solar_power *= shade_factor
+# Assume peak irradiance ~600 W/m^2 & 80% transmittance of glass => 600*0.8
+max_solar_intensity = 480.0  # W/m^2
+max_solar_power_unshaded = window_area * max_solar_intensity
+# apply shading
+max_solar_power_shaded = max_solar_power_unshaded * shade_factor
+# final solar gains array for baseline scenario
+solar_gains_base = [max_solar_power_shaded * sf for sf in solar_gain_profile]
 
-# Calculate actual solar gains array (W) for each hour
-solar_gains = [solar_factor * max_solar_power for solar_factor in solar_gain_profile]
+###############################################################################
+# 3) BEST & WORST SCENARIOS
+#    We'll run three parallel simulations: baseline (user's input),
+#    worst-case, and best-case. Then we'll plot all three.
+###############################################################################
 
-# 8. Simulation loop for baseline (moderate scenario), and best/worst scenarios
-# We will simulate three scenarios: baseline (using given parameters), 
-# worst (low vent, no shade, light mass, old insulation), best (high vent, full shade, high mass, good insulation).
-# Note: The baseline here is effectively similar to 'given parameters', which might already be moderate. 
-# We set best/worst by tweaking certain values accordingly.
+# 3.1 Baseline scenario parameters
+C_baseline = C_total_base
+fabric_HLC_baseline = fabric_HLC
+vent_ach_baseline = vent_base_ach  # will vary with wind, see loop
 
-# Prepare arrays to store results
-time_hours = list(range(24))
-T_indoor_base  = [0]*24
-T_indoor_best  = [0]*24
-T_indoor_worst = [0]*24
+# 3.2 Worst-case: minimal thermal mass, no shade, poor insulation, minimal ventilation
+C_worst = C_total_base * 0.5             # half the baseline mass
+fabric_HLC_worst = fabric_HLC * 1.5      # 50% worse insulation
+vent_ach_worst = 0.2                     # very low infiltration
+# no shading => 1.0 shading factor
+max_solar_power_no_shade = max_solar_power_unshaded
+solar_gains_worst = [max_solar_power_no_shade * sf for sf in solar_gain_profile]
 
-# Define scenario parameters:
-# Baseline uses current C, fabric_HLC, vent_base_ach, shade_factor etc from above.
-C_base = C
-fabric_HLC_base = fabric_HLC
-# For ventilation in baseline, we will allow wind to modulate around vent_base_ach.
-# Define worst-case:
-C_worst = C * 0.5   # assume much lower thermal mass (e.g., lightweight construction, half the heat capacity)
-fabric_HLC_worst = fabric_HLC * 1.5  # assume poorer insulation (50% more heat transfer)
-vent_ach_worst = 0.2  # very low ventilation (ACH)
-# No shading in worst case:
-solar_gains_worst = [solar_factor * (window_area * 600 * solar_transmission_factor) for solar_factor in solar_gain_profile]  # 0% shade (shade_factor =1)
+# 3.3 Best-case: higher thermal mass, better insulation, strong ventilation, full shade
+C_best = C_total_base * 1.5               # heavier construction / better mass
+fabric_HLC_best = fabric_HLC * 0.7        # 30% better insulation
+vent_ach_best = 3.0                       # high ventilation
+# full shade => 0.0 shading factor
+solar_gains_best = [0.0 for _ in range(24)]
 
-# Define best-case:
-C_best = C * 1.5    # much higher thermal mass (e.g., thick walls, 50% more capacity)
-fabric_HLC_best = fabric_HLC * 0.7  # better insulation (30% less heat transfer)
-vent_ach_best = 3.0  # high ventilation rate (e.g., windows open, fans)
-# Full shading in best case:
-solar_gains_best = [0 for _ in solar_gain_profile]  # assume 100% effective shade for simplicity (no direct solar gain)
+###############################################################################
+# 4) TIME-STEPPING SIMULATION
+#    We'll do an hourly Euler forward from hour=0..23.
+###############################################################################
+T_indoor_base  = [0.0]*24
+T_indoor_worst = [0.0]*24
+T_indoor_best  = [0.0]*24
 
-# Initial indoor temps (start of simulation)
-T_indoor_base[0]  = outdoor_temps[0]  # assume start equal to outdoor or a given comfortable temp
-T_indoor_worst[0] = T_indoor_base[0]
-T_indoor_best[0]  = T_indoor_base[0]
+# Initial indoor temperatures, assume starting at same as outdoors at hour 0
+T_indoor_base[0]  = outdoor_temps[0]
+T_indoor_worst[0] = outdoor_temps[0]
+T_indoor_best[0]  = outdoor_temps[0]
 
-# Loop through hours
+dt = 3600.0  # seconds per hour
+
 for hour in range(1, 24):
-    T_out = outdoor_temps[hour-1]  # use last hour's outside temp for heat flow calculation
-    T_in_base = T_indoor_base[hour-1]
-    T_in_worst = T_indoor_worst[hour-1]
-    T_in_best = T_indoor_best[hour-1]
-    wind = wind_speeds[hour-1]
+    # use last hour's indoor temps
+    T_b_old = T_indoor_base[hour-1]
+    T_w_old = T_indoor_worst[hour-1]
+    T_best_old = T_indoor_best[hour-1]
+    
+    # outside conditions for previous hour
+    T_out = outdoor_temps[hour-1]
+    wind_speed = wind_speeds[hour-1]
 
-    # Ventilation ACH for base: baseline infiltration + some wind effect (simple linear)
-    vent_ach_base = vent_base_ach + 0.05 * wind  # each m/s adds 0.05 ACH for example
-    # Calculate heat flows for each scenario:
-    # Baseline
-    Q_cond_base = fabric_HLC_base * (T_out - T_in_base)  # conduction (W)
-    Q_vent_base = 0.33 * vent_ach_base * house_volume * (T_out - T_in_base)  # ventilation (W)
-    Q_int_base  = metabolic_heat  # internal (W)
-    Q_solar_base = solar_gains[hour-1]  # (W)
-    Q_net_base = Q_cond_base + Q_vent_base + Q_int_base + Q_solar_base
-    # Temperature update
-    T_indoor_base[hour] = T_in_base + (Q_net_base * 3600.0) / C_base
+    # compute infiltration/vent for baseline scenario
+    # add some wind effect => for each m/s add +0.05 ACH
+    dynamic_ach_base = vent_ach_baseline + 0.05*wind_speed
 
-    # Worst-case
-    Q_cond_worst = fabric_HLC_worst * (T_out - T_in_worst)
-    Q_vent_worst = 0.33 * vent_ach_worst * house_volume * (T_out - T_in_worst)
-    Q_int_worst  = metabolic_heat  # still have people
-    Q_solar_worst = solar_gains_worst[hour-1]
-    Q_net_worst = Q_cond_worst + Q_vent_worst + Q_int_worst + Q_solar_worst
-    T_indoor_worst[hour] = T_in_worst + (Q_net_worst * 3600.0) / C_worst
+    # >>> Baseline scenario
+    # conduction
+    Q_cond_b = fabric_HLC_baseline * (T_out - T_b_old)  # W
+    # ventilation
+    Q_vent_b = 0.33 * dynamic_ach_base * house_volume * (T_out - T_b_old)  # W
+    # internal
+    Q_int_b = metabolic_heat
+    # solar
+    Q_solar_b = solar_gains_base[hour-1]
+    # net
+    Q_net_b = Q_cond_b + Q_vent_b + Q_int_b + Q_solar_b
+    # update
+    T_b_new = T_b_old + (Q_net_b * dt)/C_baseline
+    T_indoor_base[hour] = T_b_new
 
-    # Best-case
-    Q_cond_best = fabric_HLC_best * (T_out - T_in_best)
-    Q_vent_best = 0.33 * vent_ach_best * house_volume * (T_out - T_in_best)
+    # >>> Worst-case scenario
+    Q_cond_w = fabric_HLC_worst * (T_out - T_w_old)
+    Q_vent_w = 0.33 * vent_ach_worst * house_volume * (T_out - T_w_old)
+    Q_int_w  = metabolic_heat
+    Q_solar_w = solar_gains_worst[hour-1]
+    Q_net_w = Q_cond_w + Q_vent_w + Q_int_w + Q_solar_w
+    T_w_new = T_w_old + (Q_net_w * dt)/C_worst
+    T_indoor_worst[hour] = T_w_new
+
+    # >>> Best-case scenario
+    Q_cond_best = fabric_HLC_best * (T_out - T_best_old)
+    Q_vent_best = 0.33 * vent_ach_best * house_volume * (T_out - T_best_old)
     Q_int_best  = metabolic_heat
-    Q_solar_best = solar_gains_best[hour-1]
-    Q_net_best = Q_cond_best + Q_vent_best + Q_int_best + Q_solar_best
-    T_indoor_best[hour] = T_in_best + (Q_net_best * 3600.0) / C_best
+    Q_solar_best_val = solar_gains_best[hour-1]
+    Q_net_best = Q_cond_best + Q_vent_best + Q_int_best + Q_solar_best_val
+    T_best_new = T_best_old + (Q_net_best * dt)/C_best
+    T_indoor_best[hour] = T_best_new
 
-# 9. Print summary results
-print("Indoor Temperature Simulation (No AC) Complete.")
-print(f"Final indoor temperature (baseline) at 24h: {T_indoor_base[23]:.1f} °C")
-print(f"Max indoor temperature (baseline): {max(T_indoor_base):.1f} °C at hour {T_indoor_base.index(max(T_indoor_base))}")
-print(f"Max indoor temperature (worst-case): {max(T_indoor_worst):.1f} °C")
-print(f"Max indoor temperature (best-case): {max(T_indoor_best):.1f} °C")
+###############################################################################
+# 5) PRINT RESULTS & MAKE A PLOT
+###############################################################################
 
-# 10. Plot the results
+# Summaries
+def max_with_hour(temp_list):
+    mx = max(temp_list)
+    hr = temp_list.index(mx)
+    return mx, hr
+
+mx_base, hr_base = max_with_hour(T_indoor_base)
+mx_worst, hr_worst = max_with_hour(T_indoor_worst)
+mx_best, hr_best = max_with_hour(T_indoor_best)
+
+print("==== Simulation Complete ====")
+print(f"Final indoor temperature (Baseline) at 24h: {T_indoor_base[23]:.1f} °C")
+print(f"Max indoor temperature (Baseline): {mx_base:.1f} °C at hour {hr_base}")
+print(f"Max indoor temperature (Worst-case): {mx_worst:.1f} °C at hour {hr_worst}")
+print(f"Max indoor temperature (Best-case): {mx_best:.1f} °C at hour {hr_best}")
+
+# Plot
+hours = range(24)
 plt.figure(figsize=(8,5))
-plt.plot(time_hours, T_indoor_base, label="Indoor Temp (Baseline)", color='b')
-plt.plot(time_hours, T_indoor_worst, label="Worst-Case", color='r', linestyle='--')
-plt.plot(time_hours, T_indoor_best, label="Best-Case", color='g', linestyle='--')
-# Shade area between best and worst
-plt.fill_between(time_hours, T_indoor_best, T_indoor_worst, color='gray', alpha=0.3, label="Uncertainty Range")
-plt.plot(time_hours, outdoor_temps, label="Outdoor Temp", color='k', linestyle=':', alpha=0.7)
-plt.xlabel("Time (hour)")
+plt.plot(hours, T_indoor_base,  label="Indoor (Baseline)", color='b')
+plt.plot(hours, T_indoor_worst, label="Worst-case", color='r', linestyle='--')
+plt.plot(hours, T_indoor_best,  label="Best-case", color='g', linestyle='--')
+
+# Uncertainty band between best & worst
+y_lower = [min(a,b) for (a,b) in zip(T_indoor_best, T_indoor_worst)]
+y_upper = [max(a,b) for (a,b) in zip(T_indoor_best, T_indoor_worst)]
+plt.fill_between(hours, y_lower, y_upper, color='gray', alpha=0.3, label="Uncertainty Range")
+
+# Also plot outdoor for reference
+plt.plot(hours, outdoor_temps, label="Outdoor", color='k', linestyle=':')
+plt.xlabel("Hour of Day")
 plt.ylabel("Temperature (°C)")
-plt.title("24h Indoor Temperature Simulation during Heatwave")
-plt.legend(loc="upper right")
+plt.title("Indoor Temperature Simulation Over 24h (Heat Wave)")
 plt.grid(True)
-# plt.show()  # Uncomment this line when running locally to display the plot
+plt.legend(loc="best")
+
+# Uncomment the next line to display the chart in an interactive environment:
+# plt.show()
