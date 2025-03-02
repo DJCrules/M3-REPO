@@ -5,13 +5,8 @@ import matplotlib.pyplot as plt
 
 def logistic_growth(t, P0, r):
     # Carrying capacity for population
-    K = 1505880  # calculated from size of birmingham in km^2 and average population density of London
+    K = 1524920  # calculated from size of birmingham in km^2 and average population density of London
     return K / (1 + ((K - P0) / P0) * np.exp(-r * t))
-
-
-#def add_noise(y, sigma=0.05):
-    #Adds a random 5% noise for jittering to test model sensitivity
-    #return y * (1 + np.random.normal(0, sigma, size=y.shape))
 
 # Loads the dataset
 United_Kingdom_population = pd.read_csv(r"C:\Users\joshk\OneDrive - Hills Road Sixth Form College\Documents\GitHub\M3-REPO\Logarithmic\Manchester_housing.csv", converters={
@@ -25,13 +20,13 @@ X = United_Kingdom_population["Year"] - United_Kingdom_population["Year"].min()
 y = United_Kingdom_population["Population"]
 
 # Fits logistic model
-params, _ = curve_fit(logistic_growth, X, y, p0=[y.iloc[0], 0.1])
+params, _ = curve_fit(logistic_growth, X, y)
 
 start_year = United_Kingdom_population["Year"].min()
 end_year = 2045
 future_years = np.arange(start_year, end_year + 1)
 future_times = future_years - start_year
-future_predictions = logistic_growth(future_times, *params)
+future_predictions = logistic_growth(future_times, * params)
 
 # Print the estimated population for each year from 2012 to 2045
 print("Estimated Population for Each Year from 2012 to 2045:")
