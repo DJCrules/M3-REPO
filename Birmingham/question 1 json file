@@ -1,0 +1,12 @@
+{
+    "accommodation_type": "Detached", 
+    "stories": 2,
+    "units_in_structure": 1,
+    "unit_size_m2": 100,
+    "year_built": 1990,
+    "rooms_per_unit": 5,
+    "persons_per_unit": 4,
+    "shade_percentage": 50
+}
+
+accomodation typ can be "Detached, Semi-detached, Apartment, flat, apartment, terrace"
