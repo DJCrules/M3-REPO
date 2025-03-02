@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import warnings
+import random
+import csv
 warnings.simplefilter("error", RuntimeWarning)
 
 class polynomial_trend:
@@ -28,7 +30,7 @@ class polynomial_trend:
         if show:
             self.plot_data()
 
-    def generate_poly_data(self, order, num_points=10):
+    def generate_poly_data(self, order, num_points=35, shift=False):
         """
         the added noise = order
         """
@@ -41,7 +43,7 @@ class polynomial_trend:
         y = np.sum([c * (x**i) for i, c in enumerate(coefficients)], axis=0)
         #^find polynomial value for each x value
 
-        noise = np.random.normal(0, order / 2, num_points)
+        noise = np.random.normal(0, order, num_points)
         y += noise
         #add noise
 
@@ -51,8 +53,6 @@ class polynomial_trend:
     def plot_data(self, coefficients=None, extra=0, mse=0, pred=0, avg=False):
         """
         extra is short for extrapolation
-        mse is on title
-        if coefficients is none, no line of best fit
         """
         plt.scatter(self.xs, self.ys)
         #^plot data as scatter
@@ -85,7 +85,7 @@ class polynomial_trend:
             plt.plot(x_xtra, y_xtra, color='red', linestyle="dashed")
         plt.show()
     
-    def regress(self, order, rate=0.000001, tolerance=0.000001, max_iterations=20000):
+    def regress(self, order, rate=0.00001, tolerance=0.0001, max_iterations=20000):
         """
         really good at cubic but quite bad at anything < 3
         """
@@ -116,13 +116,10 @@ class polynomial_trend:
                 if abs(last_mse - current_mse) < tolerance:
                     break
                 #^check if the mse has increased and if it has then stop
-
                 last_mse = current_mse
                 iteration += 1
-            print(f"Ended on iteration {iteration}")
             return coefficients, current_mse
         except:
-            print(f"Error on iteration {iteration}")
             raise Exception
     
     def MSE(self, coefficients):
@@ -139,31 +136,31 @@ class polynomial_trend:
         #^find starting baysian information criteria
 
         datapoints = len(self.xs)
-        #int(np.round(np.sqrt(datapoints), 0))
-        for i in range(2, 5):
+        for i in range(2, int(np.round(np.sqrt(datapoints), 0))):
             try:
                 coeffs, mse = self.regress(i)
-                #^regress for the specific order
                 current_BIC = self.BIC(coeffs, mse)
                 print(f"order {i} BIC: {round(current_BIC, 2)}")
                 if current_BIC < bestBIC:
                     best_coefficients, best_mse = coeffs, mse
                     bestBIC = current_BIC
                     #^finding best bic
+            #^regress for the specific order
             except:
                 print(f"orders {i}+ cause overflow error")
                 break
+
         
         self.coeffs = best_coefficients
         self.mse = best_mse
         print(f"\norder {len(self.coeffs) - 1} chosen, Refining: ")
-        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.000001, 0, 100000)
+        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.00001, 0.00000001, 200000)
         #^make the model with the best BIC more refined
-
-        #self.plot_data(self.coeffs, 0, self.mse) #simple fitted line
-        #self.plot_data(self.coeffs, extra, self.mse, 0) #extra following poly line
-        #self.plot_data(self.coeffs, 0, self.mse, extra) # extra running straight on from poly line
-        self.plot_data(self.coeffs, extra, self.mse, extra, True) # both + mean
+        self.plot_data(self.coeffs, 0, self.mse)
+        self.plot_data(self.coeffs, extra, self.mse, 0)
+        self.plot_data(self.coeffs, 0, self.mse, extra)
+        self.plot_data(self.coeffs, extra, self.mse, extra)
+        self.plot_data(self.coeffs, extra, self.mse, extra, True)
     
     def BIC(self, coeffs, mse):
         #cool equation to figure out the best order polynomial to model dataset
@@ -171,5 +168,5 @@ class polynomial_trend:
         k = len(coeffs)
         return (n * np.log(mse)) + (k * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True)
-newtrend.general_regress(1)
+newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
+newtrend.general_regress(2)
