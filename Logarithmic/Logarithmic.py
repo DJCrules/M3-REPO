@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 def logistic_growth(t, P0, r):
     #Carrying capacity for population
-    K = 1000000000 #Guess
+    K = 589560 #Guess
     return K / (1 + ((K - P0) / P0) * np.exp(-r * t))
 
 def add_noise(y, sigma=0.05):
@@ -13,28 +13,28 @@ def add_noise(y, sigma=0.05):
     return y * (1 + np.random.normal(0, sigma, size=y.shape))
 
 #Loads the dataset
-United_Kingdom_population = df = pd.read_csv(r"D:\M3 Repository\M3-REPO\Logarithmic\united_kingdom_population.csv", converters={
-    "Population": lambda x: int(x.replace(",", ""))})
+United_Kingdom_population = df = pd.read_csv(r"C:\Users\joshk\OneDrive - Hills Road Sixth Form College\Documents\GitHub\M3-REPO\Logarithmic\Manchester_housing.csv", converters={
+    "Total housing units": lambda x: int(x.replace(",", ""))})
 
 # Clean column names
 United_Kingdom_population.columns = United_Kingdom_population.columns.str.strip()
 
 #Prepares the data
 X = United_Kingdom_population["Year"] - United_Kingdom_population["Year"].min()
-y = United_Kingdom_population["Population"]
+y = United_Kingdom_population["Total housing units"]
 
 #Fits logistic model
 params, _ = curve_fit(logistic_growth, X, y, p0=[y.iloc[0], 0.1])
 
 
 start_year = United_Kingdom_population["Year"].min()
-end_year = 2200
+end_year = 2075
 future_years = np.arange(start_year, end_year + 1)
 future_times = future_years - start_year
 future_predictions = logistic_growth(future_times, *params)
 
 #Selects future years for predictions
-selected_future_years = np.array([2100, 2150, 2200])
+selected_future_years = np.array([2035, 2045, 2075])
 selected_predictions = logistic_growth(selected_future_years - start_year, *params)
 
 #Sensitivity analysis averaged over 10 trials
