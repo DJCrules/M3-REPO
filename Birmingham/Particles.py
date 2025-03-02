@@ -3,7 +3,7 @@ import time
 import os
 
 ROOM_WIDTH = 100
-ROOM_HEIGHT = 50
+ROOM_HEIGHT = 30
 
 WINDOW_ROW = ROOM_HEIGHT // 2
 
