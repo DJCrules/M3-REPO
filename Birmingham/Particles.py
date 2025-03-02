@@ -2,8 +2,8 @@ import random
 import time
 import os
 
-ROOM_WIDTH = 50
-ROOM_HEIGHT = 30
+ROOM_WIDTH = 100
+ROOM_HEIGHT = 50
 
 WINDOW_ROW = ROOM_HEIGHT // 2
 
@@ -59,7 +59,7 @@ def display_room():
     print("\n")
 
 def main():
-    steps = 1000                 # Total simulation steps
+    steps = 500
     particles_per_step = 5       # Heat particles entering per step
     delay = 0.1                  # Time between frames (seconds)
 
@@ -68,7 +68,7 @@ def main():
         global room_grid
         room_grid = simulate_step()
         display_room()
-        print(f"Step {step + 1}/{steps}")
+        #print(f"Step {step + 1}/{steps}")
         time.sleep(delay)
 
     print("Simulation complete.")
