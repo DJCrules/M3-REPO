@@ -168,5 +168,5 @@ class polynomial_trend:
         k = len(coeffs)
         return (n * np.log(mse)) + (k * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True, random=True)
+newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True)
 newtrend.general_regress(2)
