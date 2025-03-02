@@ -7,7 +7,7 @@ from statsmodels.tsa.api import VAR
 from sklearn.preprocessing import StandardScaler
 
 #Loads the CSV data
-file_path = "D:/M3 Repository/M3-REPO/PCA_&_VAR/Liverpool_revenue.csv"
+file_path = "./PCA_&_VAR/Liverpool_revenue.csv"
 df = pd.read_csv(file_path)
 
 #Remove commas and convert to integer

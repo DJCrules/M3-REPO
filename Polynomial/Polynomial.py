@@ -28,7 +28,7 @@ class polynomial_trend:
         if show:
             self.plot_data()
 
-    def generate_poly_data(self, order, num_points=30):
+    def generate_poly_data(self, order, num_points=10):
         """
         the added noise = order
         """
@@ -37,7 +37,7 @@ class polynomial_trend:
             coefficients[i] *= (i ** -1)
         #^init these coeffs randomly
 
-        x = np.linspace(-3, 3, num_points)
+        x = np.linspace(-5, 5, num_points)
         y = np.sum([c * (x**i) for i, c in enumerate(coefficients)], axis=0)
         #^find polynomial value for each x value
 
@@ -48,7 +48,7 @@ class polynomial_trend:
         df = pd.DataFrame({'x': x, 'y': y})
         df.to_csv(self.csv_file, index=False)
     
-    def plot_data(self, coefficients=None, extra=0, mse=0):
+    def plot_data(self, coefficients=None, extra=0, mse=0, pred=0, avg=False):
         """
         extra is short for extrapolation
         mse is on title
@@ -59,32 +59,48 @@ class polynomial_trend:
 
         if coefficients is not None:
             poly_func = np.poly1d(coefficients[::-1])
-            x_range = np.linspace(min(self.xs), max(self.xs) + extra, 100)
+            x_range = np.linspace(min(self.xs), max(self.xs), 100)
             y_fit = poly_func(x_range)
             #^numpy fitting polynomial to axis
 
             plt.plot(x_range, y_fit, color='red')
+            x_xtra = np.linspace(max(self.xs), max(self.xs) + extra)
+            y_xtra = poly_func(x_xtra)
             plt.title(f"Relative MSE: {np.round((mse /(max(self.xs) - min(self.xs))), 2)}\ny = " + " + ".join(f"{np.round(c, 2)} * x^{i}" for i, c in enumerate(coefficients)))
             #^title includes mse and all the coeffs nicely organised
-
+            
+            if pred != 0:
+                poly_derivative = np.polyder(poly_func)
+                last_x = max(self.xs)
+                last_y = poly_func(last_x)
+                last_slope = poly_derivative(last_x) 
+                
+                x_extrapolate = np.linspace(last_x, last_x + pred, 50)
+                y_extrapolate =  last_slope * (x_extrapolate - last_x) + last_y
+                # y = mx + c
+                if avg:
+                    y_avg = np.divide((y_extrapolate + y_xtra), 2)
+                    plt.plot(x_extrapolate, y_avg, color='blue', linestyle="dashed")
+                plt.plot(x_extrapolate, y_extrapolate, color='red', linestyle="dashed")
+            plt.plot(x_xtra, y_xtra, color='red', linestyle="dashed")
         plt.show()
     
-    def regress(self, order, rate=0.00001, tolerance=0.0001, max_iterations=20000):
+    def regress(self, order, rate=0.000001, tolerance=0.000001, max_iterations=20000):
         """
         really good at cubic but quite bad at anything < 3
         """
-        coefficients = np.ones(order + 1)
-        scale_factor = (max(self.xs) - min(self.xs)) ** (1 / order)
-        for i in range(1, len(coefficients)):
-            coefficients[i] = scale_factor / (i ** 1.5)
-        # ^initialise the coeffs like this to avoid overflow, from them being too far 
-        # from the datapoints initially. dont use random coeffs because this makes 
-        # repeats inconsistent
+        try:
+            coefficients = np.ones(order + 1)
+            scale_factor = (max(self.xs) - min(self.xs)) ** (1 / order)
+            for i in range(1, len(coefficients)):
+                coefficients[i] = scale_factor / (i ** 2)
+            # ^initialise the coeffs like this to avoid overflow, from them being too far 
+            # from the datapoints initially. dont use random coeffs because this makes 
+            # repeats inconsistent
 
-        last_mse = self.MSE(coefficients)
-        iteration = 0
-        while iteration < max_iterations:
-            try:
+            last_mse = self.MSE(coefficients)
+            iteration = 0
+            while iteration < max_iterations:
                 poly_func = np.poly1d(coefficients[::-1])
                 predicted_ys = poly_func(self.numpy_xs)
                 errors = predicted_ys - self.numpy_ys
@@ -100,13 +116,14 @@ class polynomial_trend:
                 if abs(last_mse - current_mse) < tolerance:
                     break
                 #^check if the mse has increased and if it has then stop
+
                 last_mse = current_mse
                 iteration += 1
-            except RuntimeWarning:
-                print("MSE: Overflow")
-                return [0], 9999999
-        print(f"MSE: {current_mse}")
-        return coefficients, current_mse
+            print(f"Ended on iteration {iteration}")
+            return coefficients, current_mse
+        except:
+            print(f"Error on iteration {iteration}")
+            raise Exception
     
     def MSE(self, coefficients):
         #MSE is the mean squared error for the coeffs and the datapoints
@@ -118,34 +135,41 @@ class polynomial_trend:
     def general_regress(self, extra):
         best_coefficients, best_mse = self.regress(1)
         bestBIC = self.BIC(best_coefficients, best_mse)
+        print(f"order 1 BIC: {round(bestBIC, 2)}")
         #^find starting baysian information criteria
 
         datapoints = len(self.xs)
-        for i in range(1, int(np.round(np.sqrt(datapoints), 0))):
-            coeffs, mse = self.regress(i)
-            #^regress for the specific order
-            #newtrend.plot_data(coeffs, mse=mse)
-
-            current_BIC = self.BIC(coeffs, mse)
-            if current_BIC < bestBIC:
-                best_coefficients, best_mse = coeffs, mse
-                bestBIC = current_BIC
-            #^finding best bic
+        #int(np.round(np.sqrt(datapoints), 0))
+        for i in range(2, 5):
+            try:
+                coeffs, mse = self.regress(i)
+                #^regress for the specific order
+                current_BIC = self.BIC(coeffs, mse)
+                print(f"order {i} BIC: {round(current_BIC, 2)}")
+                if current_BIC < bestBIC:
+                    best_coefficients, best_mse = coeffs, mse
+                    bestBIC = current_BIC
+                    #^finding best bic
+            except:
+                print(f"orders {i}+ cause overflow error")
+                break
         
         self.coeffs = best_coefficients
         self.mse = best_mse
-        print("Refining: ")
-        self.coeffs, self.mse = self.regress(len(self.coeffs - 1), 0.00001, 0.00000001, 400000)
+        print(f"\norder {len(self.coeffs) - 1} chosen, Refining: ")
+        self.coeffs, self.mse = self.regress(len(self.coeffs) - 1, 0.000001, 0, 100000)
         #^make the model with the best BIC more refined
 
-        self.plot_data(self.coeffs, extra, self.mse)
-        self.plot_data(self.coeffs, extra + 2, self.mse)
+        #self.plot_data(self.coeffs, 0, self.mse) #simple fitted line
+        #self.plot_data(self.coeffs, extra, self.mse, 0) #extra following poly line
+        #self.plot_data(self.coeffs, 0, self.mse, extra) # extra running straight on from poly line
+        self.plot_data(self.coeffs, extra, self.mse, extra, True) # both + mean
     
     def BIC(self, coeffs, mse):
         #cool equation to figure out the best order polynomial to model dataset
         n = len(self.xs)
-        k = len(coeffs) 
-        return (n * np.log(mse)) + ((k * 2) * np.log(n))
+        k = len(coeffs)
+        return (n * np.log(mse)) + (k * np.log(n))
 
-newtrend = polynomial_trend(r'.\Polynomial\sampledata.csv', show=True, random=True)
-newtrend.general_regress(0)
+newtrend = polynomial_trend(r'.\Polynomial\sample_data.csv', show=True)
+newtrend.general_regress(1)

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 #Loads revenue data from CSV
-csv_file = "D:/M3 Repository/M3-REPO/Exponential_Smoothing/Liverpool_revenue.csv"  
+csv_file = "./Exponential_Smoothing/Liverpool_revenue.csv"  
 df = pd.read_csv(csv_file)
 
 #Converts "Year" to datetime and set as index
